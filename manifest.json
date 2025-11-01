@@ -1,0 +1,166 @@
+{
+  "version": "1.0.0",
+  "description": "OpenCode Agent Task Manifest - Maps agent tasks to required workspace files",
+  "tasks": {
+    "itp-generation": {
+      "description": "Generate Inspection and Test Plans from project specifications",
+      "output_type": "ITP Template with inspection points",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/itp-generation.md",
+        "schemas/neo4j/itp-template.schema.ts",
+        "schemas/neo4j/inspection-point.schema.ts",
+        "schemas/neo4j/work-type.schema.ts"
+      ]
+    },
+    "project-details": {
+      "description": "Extract project metadata, parties, contracts, and key dates from project documents",
+      "output_type": "Project node with comprehensive metadata and HTML",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/project-details.md",
+        "schemas/neo4j/project.schema.ts",
+        "schemas/neo4j/user.schema.ts"
+      ]
+    },
+    "wbs-extraction": {
+      "description": "Extract Work Breakdown Structure from project scope and specifications",
+      "output_type": "Hierarchical WBS nodes with work packages",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/wbs-extraction.md",
+        "schemas/neo4j/wbs-node.schema.ts",
+        "schemas/neo4j/work-type.schema.ts"
+      ]
+    },
+    "lbs-extraction": {
+      "description": "Extract Location Breakdown Structure from project drawings and site information",
+      "output_type": "Hierarchical LBS nodes with location mappings to WBS",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/lbs-extraction.md",
+        "schemas/neo4j/lbs-node.schema.ts",
+        "schemas/neo4j/wbs-node.schema.ts",
+        "schemas/neo4j/area-code.schema.ts"
+      ]
+    },
+    "pqp-generation": {
+      "description": "Generate Project Quality Plan based on project requirements and ISO 9001",
+      "output_type": "Management Plan with sections and content blocks",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/pqp-generation.md",
+        "schemas/neo4j/management-plan.schema.ts",
+        "schemas/neo4j/itp-template.schema.ts",
+        "schemas/neo4j/work-type.schema.ts"
+      ]
+    },
+    "emp-generation": {
+      "description": "Generate Environmental Management Plan based on project requirements and ISO 14001",
+      "output_type": "Management Plan with environmental controls",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/emp-generation.md",
+        "schemas/neo4j/management-plan.schema.ts"
+      ]
+    },
+    "ohsmp-generation": {
+      "description": "Generate OHS Management Plan based on WHS legislation and ISO 45001",
+      "output_type": "Management Plan with safety controls",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/ohsmp-generation.md",
+        "schemas/neo4j/management-plan.schema.ts"
+      ]
+    },
+    "document-metadata": {
+      "description": "Extract document register metadata from project files",
+      "output_type": "Document nodes with classification and metadata",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/document-metadata.md",
+        "schemas/neo4j/document.schema.ts"
+      ]
+    },
+    "standards-extraction": {
+      "description": "Extract all referenced standards and specifications from project documents",
+      "output_type": "Referenced standards with database linkages",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j reference docs schema.md",
+        "shared/neo4j generated schema.md",
+        "prompts/standards-extraction.md",
+        "schemas/neo4j/test-method.schema.ts"
+      ]
+    },
+    "qse-generation": {
+      "description": "Generate corporate QSE system procedures and templates",
+      "output_type": "QSE system content with procedures and forms",
+      "files": [
+        "shared/instructions.md",
+        "shared/connection details.md",
+        "shared/Exploration guide.md",
+        "shared/neo4j generated schema.md",
+        "prompts/qse-generation.md",
+        "schemas/neo4j/management-plan.schema.ts"
+      ]
+    }
+  },
+  "shared_files": {
+    "description": "Files included in all agent workspaces",
+    "files": [
+      "shared/instructions.md",
+      "shared/connection details.md",
+      "shared/Exploration guide.md",
+      "shared/neo4j standards schema.md",
+      "shared/neo4j reference docs schema.md",
+      "shared/neo4j generated schema.md"
+    ]
+  },
+  "notes": {
+    "schema_usage": "TypeScript schema files from schemas/neo4j/ are copied to agent workspace for reference. These define the exact output structure agents must produce.",
+    "database_access": "Agents read from Standards (7687) and Project Docs (7688), write to Generated (7690)",
+    "workspace_structure": "Each agent session gets a unique workspace at /app/opencode-workspace/agent-sessions/{session-id}/ with task-specific files copied in"
+  }
+}
+
