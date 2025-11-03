@@ -7,6 +7,7 @@ import { z } from 'zod';
  * Templates define the inspection points, hold points, and test requirements
  * for a specific type of work.
  * 
+ * Primary Key: (projectId, docNo)
  * Agent generates ITP templates by:
  * - Extracting ITP structures from specifications
  * - Parsing inspection points and requirements
@@ -19,18 +20,18 @@ import { z } from 'zod';
 // ============================================================================
 
 export interface ITPTemplateNode {
-  id: string;
-  docNo: string;
+  projectId: string;                         // Project ID (REQUIRED)
+  docNo: string;                             // Document number (REQUIRED, e.g., "ITP-SG-001")
   description: string;
   workType: string;
   specRef: string;
   
   // Jurisdiction and Standards
   jurisdiction?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';
-  applicableStandards?: string[];    // e.g., ["AS 3600", "AS 1379"]
+  applicableStandards?: string[];            // e.g., ["AS 3600", "AS 1379"]
   
   // Scope
-  scopeOfWork?: string;              // Description of work covered by this ITP
+  scopeOfWork?: string;                      // Description of work covered by this ITP
   
   // Version Control
   revisionDate: Date;
@@ -39,7 +40,7 @@ export interface ITPTemplateNode {
   
   // Approval
   approvalStatus: 'not_required' | 'pending' | 'approved' | 'rejected';
-  approvedBy?: string;
+  approvedBy?: string;                       // User email
   approvedDate?: Date;
   
   // Additional
@@ -49,13 +50,16 @@ export interface ITPTemplateNode {
   updatedAt: Date;
   createdBy?: string;
   updatedBy?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: string;
 }
 
 export interface ITPTemplateRelationships {
   belongsToProject: string;
   hasPoints?: string[];          // Inspection Point IDs
-  supersedes?: string;           // Previous template version
-  approvedBy?: string[];         // User IDs
+  supersedes?: string;           // Previous template docNo
+  approvedBy?: string[];         // User emails
 }
 
 // ============================================================================
@@ -67,7 +71,7 @@ export const ApprovalStatusEnum = z.enum(['not_required', 'pending', 'approved',
 export const JurisdictionEnum = z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']);
 
 export const ITPTemplateNodeSchema = z.object({
-  id: z.string().uuid(),
+  projectId: z.string().min(1, 'Project ID is required'),
   docNo: z.string().min(1, 'Document number is required'),
   description: z.string().min(1, 'Description is required'),
   workType: z.string().min(1, 'Work type is required'),
@@ -87,7 +91,7 @@ export const ITPTemplateNodeSchema = z.object({
   
   // Approval
   approvalStatus: ApprovalStatusEnum,
-  approvedBy: z.string().uuid().optional(),
+  approvedBy: z.string().optional(),
   approvedDate: z.coerce.date().optional(),
   
   // Additional
@@ -95,16 +99,21 @@ export const ITPTemplateNodeSchema = z.object({
   metadata: z.record(z.any()).optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
-  createdBy: z.string().uuid().optional(),
-  updatedBy: z.string().uuid().optional(),
+  createdBy: z.string().optional(),
+  updatedBy: z.string().optional(),
+  isDeleted: z.boolean().optional(),
+  deletedAt: z.coerce.date().optional(),
+  deletedBy: z.string().optional(),
 });
 
 export const CreateITPTemplateInputSchema = ITPTemplateNodeSchema.omit({
-  id: true,
   createdAt: true,
   updatedAt: true,
   createdBy: true,
   updatedBy: true,
+  isDeleted: true,
+  deletedAt: true,
+  deletedBy: true,
 }).partial({
   status: true,
   approvalStatus: true,
@@ -115,21 +124,24 @@ export const CreateITPTemplateInputSchema = ITPTemplateNodeSchema.omit({
   metadata: true,
 });
 
-export const UpdateITPTemplateInputSchema = ITPTemplateNodeSchema.partial().required({ id: true });
+export const UpdateITPTemplateInputSchema = ITPTemplateNodeSchema.partial().required({ 
+  projectId: true, 
+  docNo: true 
+});
 
 // ============================================================================
 // NEO4J CYPHER CONSTRAINTS
 // ============================================================================
 
 export const ITP_TEMPLATE_CONSTRAINTS = `
-  -- Unique constraints
-  CREATE CONSTRAINT itp_template_id_unique IF NOT EXISTS
-  FOR (t:ITP_Template) REQUIRE t.id IS UNIQUE;
-  
-  CREATE CONSTRAINT itp_template_docno_unique IF NOT EXISTS
-  FOR (t:ITP_Template) REQUIRE t.docNo IS UNIQUE;
+  -- Composite unique constraint
+  CREATE CONSTRAINT itp_template_unique IF NOT EXISTS
+  FOR (t:ITP_Template) REQUIRE (t.projectId, t.docNo) IS UNIQUE;
   
   -- Indexes for performance
+  CREATE INDEX itp_template_project_id IF NOT EXISTS
+  FOR (t:ITP_Template) ON (t.projectId);
+  
   CREATE INDEX itp_template_work_type IF NOT EXISTS
   FOR (t:ITP_Template) ON (t.workType);
   
@@ -179,88 +191,137 @@ export interface AgentITPTemplateOutput {
 export const ITP_TEMPLATE_QUERIES = {
   // Get all ITP templates for a project
   getAllTemplates: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
     WHERE t.isDeleted IS NULL OR t.isDeleted = false
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
     ORDER BY t.docNo
   `,
   
   // Get template with inspection points
   getTemplateDetail: `
-    MATCH (t:ITP_Template {id: $templateId})
+    MATCH (t:ITP_Template {projectId: $projectId, docNo: $docNo})
     WHERE t.isDeleted IS NULL OR t.isDeleted = false
     OPTIONAL MATCH (t)-[:HAS_POINT]->(ip:InspectionPoint)
-    RETURN t, collect(ip) as inspectionPoints
-    ORDER BY ip.sequence
+    WHERE ip.isDeleted IS NULL OR ip.isDeleted = false
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template, 
+           collect(ip ORDER BY ip.sequence) as inspectionPoints
   `,
   
   // Get templates by work type
   getTemplatesByWorkType: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
     WHERE t.workType = $workType
       AND (t.isDeleted IS NULL OR t.isDeleted = false)
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
     ORDER BY t.docNo
   `,
   
   // Get approved templates
   getApprovedTemplates: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
     WHERE t.status = 'approved'
       AND (t.isDeleted IS NULL OR t.isDeleted = false)
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
     ORDER BY t.workType, t.docNo
   `,
   
   // Get templates pending approval
   getTemplatesPendingApproval: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
     WHERE t.approvalStatus = 'pending'
       AND (t.isDeleted IS NULL OR t.isDeleted = false)
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
     ORDER BY t.revisionDate DESC
   `,
   
   // Create ITP template
   createTemplate: `
-    CREATE (t:ITP_Template $properties)
-    SET t.id = randomUUID()
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (t:ITP_Template)
+    SET t = $properties
+    SET t.projectId = $projectId
     SET t.createdAt = datetime()
     SET t.updatedAt = datetime()
     SET t.status = coalesce(t.status, 'draft')
     SET t.approvalStatus = coalesce(t.approvalStatus, 'not_required')
     SET t.revisionNumber = coalesce(t.revisionNumber, 'A')
-    WITH t
-    MATCH (p:Project {id: $projectId})
     CREATE (t)-[:BELONGS_TO_PROJECT]->(p)
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
   `,
   
   // Update ITP template
   updateTemplate: `
-    MATCH (t:ITP_Template {id: $templateId})
+    MATCH (t:ITP_Template {projectId: $projectId, docNo: $docNo})
     SET t += $properties
     SET t.updatedAt = datetime()
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
   `,
   
   // Approve ITP template
   approveTemplate: `
-    MATCH (t:ITP_Template {id: $templateId})
+    MATCH (t:ITP_Template {projectId: $projectId, docNo: $docNo})
     SET t.approvalStatus = 'approved'
     SET t.status = 'approved'
     SET t.approvedDate = datetime()
-    SET t.approvedBy = $userId
+    SET t.approvedBy = $userEmail
     SET t.updatedAt = datetime()
-    RETURN t
+    RETURN t {
+      .*,
+      revisionDate: toString(t.revisionDate),
+      approvedDate: toString(t.approvedDate),
+      createdAt: toString(t.createdAt),
+      updatedAt: toString(t.updatedAt)
+    } as template
   `,
   
   // Create new revision (supersede old template)
   createRevision: `
-    MATCH (old:ITP_Template {id: $oldTemplateId})
+    MATCH (old:ITP_Template {projectId: $projectId, docNo: $oldDocNo})
     CREATE (new:ITP_Template)
     SET new = old
-    SET new.id = randomUUID()
+    SET new.docNo = $newDocNo
     SET new.revisionNumber = $newRevisionNumber
     SET new.revisionDate = datetime()
     SET new.status = 'draft'
@@ -272,21 +333,28 @@ export const ITP_TEMPLATE_QUERIES = {
     WITH new, old
     MATCH (old)-[:BELONGS_TO_PROJECT]->(p:Project)
     CREATE (new)-[:BELONGS_TO_PROJECT]->(p)
-    RETURN new
+    RETURN new {
+      .*,
+      revisionDate: toString(new.revisionDate),
+      approvedDate: toString(new.approvedDate),
+      createdAt: toString(new.createdAt),
+      updatedAt: toString(new.updatedAt)
+    } as template
   `,
   
   // Soft delete template
   deleteTemplate: `
-    MATCH (t:ITP_Template {id: $templateId})
+    MATCH (t:ITP_Template {projectId: $projectId, docNo: $docNo})
     SET t.isDeleted = true
     SET t.deletedAt = datetime()
+    SET t.deletedBy = $userId
     SET t.updatedAt = datetime()
     RETURN t
   `,
   
   // Get template statistics
   getTemplateStatistics: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(t:ITP_Template)
     WHERE t.isDeleted IS NULL OR t.isDeleted = false
     RETURN 
       count(t) as totalTemplates,
@@ -358,4 +426,3 @@ export type ITPTemplateStatus = z.infer<typeof ITPTemplateStatusEnum>;
 export type ApprovalStatus = z.infer<typeof ApprovalStatusEnum>;
 export type CreateITPTemplateInput = z.infer<typeof CreateITPTemplateInputSchema>;
 export type UpdateITPTemplateInput = z.infer<typeof UpdateITPTemplateInputSchema>;
-

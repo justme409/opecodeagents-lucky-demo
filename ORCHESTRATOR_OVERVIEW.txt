@@ -1,0 +1,236 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                   OPENCODE AGENT ORCHESTRATOR                                ║
+║                  Complete Automated Task Execution                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📍 Location: /app/opecodeagents-lucky-demo/
+🚀 Command: ./run-orchestrator.sh
+📖 Guide: ORCHESTRATOR_GUIDE.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 WHAT IT DOES
+
+  Automatically executes all 10 agent tasks in the correct order:
+  
+  ✓ Manages dependencies (tasks run when ready)
+  ✓ Parallel execution (independent tasks run together)
+  ✓ Dynamic ITP generation (extracts list, generates in parallel)
+  ✓ Real-time monitoring (see progress as it happens)
+  ✓ Error handling (retries and graceful failures)
+  ✓ Comprehensive logging (detailed reports)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 EXECUTION FLOW
+
+  Phase 1: Foundation (Parallel)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  ├─ project-details      Extract project metadata           │
+  │  ├─ standards-extraction Extract standards                  │
+  │  └─ document-metadata    Extract documents                  │
+  └─────────────────────────────────────────────────────────────┘
+                              ↓
+  Phase 2: Structure
+  ┌─────────────────────────────────────────────────────────────┐
+  │  └─ wbs-extraction       Work Breakdown Structure           │
+  └─────────────────────────────────────────────────────────────┘
+                              ↓
+  Phase 3: Location
+  ┌─────────────────────────────────────────────────────────────┐
+  │  └─ lbs-extraction       Location Breakdown Structure       │
+  └─────────────────────────────────────────────────────────────┘
+                              ↓
+  Phase 4: Management Plans (Parallel)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  ├─ pqp-generation       Project Quality Plan               │
+  │  ├─ emp-generation       Environmental Plan                 │
+  │  ├─ ohsmp-generation     OHS Plan                           │
+  │  └─ qse-generation       QSE System                         │
+  └─────────────────────────────────────────────────────────────┘
+                              ↓
+  Phase 5: ITPs (Dynamic Parallel)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  1. Extract ITP list from PQP                               │
+  │  2. Generate all ITPs in parallel:                          │
+  │     ├─ Concrete Works ITP                                   │
+  │     ├─ Steel Reinforcement ITP                              │
+  │     ├─ Formwork ITP                                         │
+  │     ├─ Earthworks ITP                                       │
+  │     └─ ... (up to 5 parallel)                               │
+  └─────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ QUICK START
+
+  Run everything:
+    cd /app/opecodeagents-lucky-demo
+    ./run-orchestrator.sh
+
+  Monitor in real-time (separate terminal):
+    cd /app/opencode-server-testing
+    ./stream-monitor.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 HOW IT WORKS
+
+  For each task:
+    1. Spawns isolated workspace (spawn-agent.sh)
+    2. Starts OpenCode server (unique port)
+    3. Sends task prompt
+    4. Streams execution events
+    5. Waits for completion (session.idle)
+    6. Moves to next task
+
+  Special ITP handling:
+    1. PQP completes
+    2. Queries Generated DB for ITP list
+    3. Spawns multiple ITP agents
+    4. Generates all in parallel (max 5 concurrent)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📈 EXPECTED TIMELINE
+
+  Phase 1: Foundation          ~5-10 minutes  (parallel)
+  Phase 2: Structure           ~3-7 minutes
+  Phase 3: Location            ~3-7 minutes
+  Phase 4: Management Plans    ~10-20 minutes (parallel)
+  Phase 5: ITPs                ~10-30 minutes (parallel)
+  
+  Total: ~30-90 minutes (depends on data size)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 OUTPUT LOCATIONS
+
+  Workspaces:
+    /app/opencode-workspace/agent-sessions/[session-id]/
+
+  Logs:
+    /app/opencode-workspace/orchestrator-logs/orchestration-[timestamp].json
+
+  Generated Data:
+    Neo4j Generated DB (port 7690)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ FEATURES
+
+  ✓ Dependency Management
+    Tasks only run when dependencies are complete
+
+  ✓ Parallel Execution
+    Independent tasks run simultaneously
+
+  ✓ Dynamic Task Spawning
+    ITP generation creates multiple parallel agents
+
+  ✓ Progress Monitoring
+    Real-time color-coded output
+
+  ✓ Error Handling
+    Retries and graceful failure handling
+
+  ✓ Comprehensive Logging
+    JSON logs with full execution details
+
+  ✓ Resource Management
+    Each task gets isolated workspace and server
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎛️ CONFIGURATION
+
+  Environment variables:
+    export OPENCODE_PORT=4096      # Starting port
+    export OPENCODE_HOST=127.0.0.1 # Server host
+
+  Advanced (edit orchestrator.js):
+    MAX_PARALLEL: 5        # Max parallel ITPs
+    TIMEOUT_MS: 300000     # Task timeout (5 min)
+    RETRY_ATTEMPTS: 2      # Retry count
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 FINAL REPORT
+
+  After completion, you'll see:
+  
+    Total execution time: 470.33s
+    
+    Tasks completed: 10/10
+    Tasks failed: 0/10
+    
+    Task results:
+      ✓ project-details: completed
+      ✓ standards-extraction: completed
+      ✓ document-metadata: completed
+      ✓ wbs-extraction: completed
+      ✓ lbs-extraction: completed
+      ✓ pqp-generation: completed
+      ✓ emp-generation: completed
+      ✓ ohsmp-generation: completed
+      ✓ qse-generation: completed
+      ✓ itp-generation: completed
+        Generated 5 ITPs
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 VALIDATION
+
+  After orchestration, validate outputs:
+  
+    cypher-shell -a neo4j://localhost:7690 -u neo4j -p [password]
+    
+    MATCH (n:Project) RETURN count(n);
+    MATCH (n:WBSNode) RETURN count(n);
+    MATCH (n:LBSNode) RETURN count(n);
+    MATCH (n:ManagementPlan) RETURN count(n);
+    MATCH (n:ITPTemplate) RETURN count(n);
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🛠️ TROUBLESHOOTING
+
+  Task fails:
+    - Check error message in output
+    - Review log file in orchestrator-logs/
+    - Check workspace directory
+
+  Port conflicts:
+    export OPENCODE_PORT=5000
+    ./run-orchestrator.sh
+
+  Timeout issues:
+    Edit orchestrator.js → increase TIMEOUT_MS
+
+  Memory issues:
+    Edit orchestrator.js → reduce MAX_PARALLEL
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 DOCUMENTATION
+
+  ORCHESTRATOR_GUIDE.md    Complete detailed guide
+  ORCHESTRATOR_OVERVIEW.txt This file (quick reference)
+  orchestrator.js          Main orchestrator code
+  run-orchestrator.sh      Simple runner script
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 READY TO RUN?
+
+  cd /app/opecodeagents-lucky-demo
+  ./run-orchestrator.sh
+
+  Sit back and watch the magic happen! ✨
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Created: November 1, 2025
+Status: Production Ready ✅
+Version: 1.0
+

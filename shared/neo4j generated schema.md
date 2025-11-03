@@ -104,11 +104,18 @@ Expected node types:
 ### Project Details
 
 Expected node types:
-- `Project`
+- `Project` - Use `project_uuid` as primary key (NOT `id`), `project_name` (NOT `name`), `project_description` (NOT `description`)
 - `Party` or `Organisation`
 - `Contact` or `Person`
 - `Contract`
 - `Milestone` or `KeyDate`
+
+**CRITICAL**: For Project nodes, always use the exact field names from the schema:
+- `project_uuid` - Primary key
+- `project_name` - Project name (REQUIRED)
+- `project_description` - Description
+- `project_address` - Location
+- `html_content` - HTML string (NOT a file path)
 
 ### WBS Extraction
 
@@ -168,12 +175,15 @@ Use consistent property names:
 
 ### Standard Properties
 
-- `id` - Unique identifier (UUID)
-- `project_id` - Project identifier
+- `id` - Unique identifier (UUID) - **EXCEPT for Project nodes which use `project_uuid`**
+- `project_id` - Project identifier - **EXCEPT for Project nodes which use `project_uuid`**
+- `project_uuid` - For all nodes, this links to the Project (use this for project reference)
 - `parentId` - Parent node ID (for hierarchical structures)
-- `name` or `title` - Node name/title
-- `description` - Detailed description
+- `name` or `title` - Node name/title - **EXCEPT for Project nodes which use `project_name`**
+- `description` - Detailed description - **EXCEPT for Project nodes which use `project_description`**
 - `type` or `nodeType` - Type classification
+
+**IMPORTANT**: Always check your task-specific schema file for the exact property names to use. The schema is the source of truth.
 
 ### Audit Properties
 

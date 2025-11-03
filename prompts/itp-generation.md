@@ -102,7 +102,14 @@ When matching standards:
 
 ## Output Format
 
-Your output must conform to the ITP Template schema. See the output schema file copied to your workspace for the exact structure including:
+**CRITICAL: Node Label and Field Names**
+
+You MUST use these exact names:
+- **Node Label**: `ITP_Template` (with underscore, NOT `ITP` or `ITPTemplate`)
+- **Project Reference**: `project_uuid` (NOT `project_id` or `id`)
+- **Relationship**: `[:BELONGS_TO_PROJECT]` pointing to the Project node
+
+Your output must conform to the ITP_Template schema. See the output schema file copied to your workspace for the exact structure including:
 
 - Node labels and properties
 - Required vs optional fields
@@ -111,4 +118,28 @@ Your output must conform to the ITP Template schema. See the output schema file 
 - Validation rules
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
+
+**Example Cypher Pattern**:
+```cypher
+MATCH (p:Project {project_uuid: $projectUuid})
+CREATE (itp:ITP_Template {
+  id: randomUUID(),
+  project_uuid: $projectUuid,
+  docNo: "ITP-001",
+  description: "...",
+  workType: "...",
+  specRef: "...",
+  status: "approved",
+  approvalStatus: "approved",
+  revisionNumber: "01",
+  revisionDate: datetime(),
+  createdAt: datetime(),
+  updatedAt: datetime()
+})
+CREATE (itp)-[:BELONGS_TO_PROJECT]->(p)
+RETURN itp
+```
+
+
+
 

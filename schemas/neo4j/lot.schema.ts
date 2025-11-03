@@ -6,6 +6,7 @@ import { z } from 'zod';
  * Core node for quality tracking. Lots represent discrete work packages
  * that are inspected, tested, and conformed before payment.
  * 
+ * Primary Key: (projectId, number)
  * Agent generates lots from specification documents by:
  * - Extracting lot definitions and numbering patterns
  * - Assigning work types and area codes
@@ -18,8 +19,8 @@ import { z } from 'zod';
 // ============================================================================
 
 export interface LotNode {
-  id: string;
-  number: string;
+  projectId: string;                // Project ID (REQUIRED)
+  number: string;                   // Lot number (REQUIRED, e.g., "SG-CH0000-CH0500-001")
   status: 'open' | 'in_progress' | 'conformed' | 'closed';
   percentComplete: number;
   description: string;
@@ -36,18 +37,21 @@ export interface LotNode {
   updatedAt: Date;
   createdBy?: string;
   updatedBy?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: string;
 }
 
 export interface LotRelationships {
   belongsToProject: string;      // Project ID
-  locatedIn?: string;            // LBS Node ID
-  coversWBS?: string[];          // WBS Node IDs
+  locatedIn?: string;            // LBS Node code
+  coversWBS?: string[];          // WBS Node codes
   implements?: string[];         // ITP Instance IDs
-  hasNCR?: string[];             // NCR IDs
-  hasTest?: string[];            // Test Request IDs
-  usesMaterial?: string[];       // Material IDs
+  hasNCR?: string[];             // NCR numbers
+  hasTest?: string[];            // Test Request numbers
+  usesMaterial?: string[];       // Material codes
   hasQuantity?: string[];        // Quantity IDs
-  relatedDocuments?: string[];   // Document IDs
+  relatedDocuments?: string[];   // Document numbers
   relatedPhotos?: string[];      // Photo IDs
 }
 
@@ -68,7 +72,7 @@ export interface LotWithRelationships extends LotNode {
 export const LotStatusEnum = z.enum(['open', 'in_progress', 'conformed', 'closed']);
 
 export const LotNodeSchema = z.object({
-  id: z.string().uuid(),
+  projectId: z.string().min(1, 'Project ID is required'),
   number: z.string().min(1, 'Lot number is required'),
   status: LotStatusEnum,
   percentComplete: z.number().min(0).max(100),
@@ -84,16 +88,21 @@ export const LotNodeSchema = z.object({
   metadata: z.record(z.any()).optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
-  createdBy: z.string().uuid().optional(),
-  updatedBy: z.string().uuid().optional(),
+  createdBy: z.string().optional(),
+  updatedBy: z.string().optional(),
+  isDeleted: z.boolean().optional(),
+  deletedAt: z.coerce.date().optional(),
+  deletedBy: z.string().optional(),
 });
 
 export const CreateLotInputSchema = LotNodeSchema.omit({
-  id: true,
   createdAt: true,
   updatedAt: true,
   createdBy: true,
   updatedBy: true,
+  isDeleted: true,
+  deletedAt: true,
+  deletedBy: true,
 }).partial({
   status: true,
   percentComplete: true,
@@ -103,21 +112,24 @@ export const CreateLotInputSchema = LotNodeSchema.omit({
   metadata: true,
 });
 
-export const UpdateLotInputSchema = LotNodeSchema.partial().required({ id: true });
+export const UpdateLotInputSchema = LotNodeSchema.partial().required({ 
+  projectId: true, 
+  number: true 
+});
 
 // ============================================================================
 // NEO4J CYPHER CONSTRAINTS
 // ============================================================================
 
 export const LOT_CONSTRAINTS = `
-  -- Unique constraints
-  CREATE CONSTRAINT lot_id_unique IF NOT EXISTS
-  FOR (l:Lot) REQUIRE l.id IS UNIQUE;
-  
-  CREATE CONSTRAINT lot_number_unique IF NOT EXISTS
-  FOR (l:Lot) REQUIRE l.number IS UNIQUE;
+  -- Composite unique constraint
+  CREATE CONSTRAINT lot_unique IF NOT EXISTS
+  FOR (l:Lot) REQUIRE (l.projectId, l.number) IS UNIQUE;
   
   -- Indexes for performance
+  CREATE INDEX lot_project_id IF NOT EXISTS
+  FOR (l:Lot) ON (l.projectId);
+  
   CREATE INDEX lot_status IF NOT EXISTS
   FOR (l:Lot) ON (l.status);
   
@@ -163,24 +175,45 @@ export interface AgentLotOutput {
 export const LOT_QUERIES = {
   // Get all lots for a project
   getAllLots: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     WHERE l.isDeleted IS NULL OR l.isDeleted = false
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
     ORDER BY l.number
   `,
   
   // Get lot with all relationships
   getLotDetail: `
-    MATCH (l:Lot {id: $lotId})
+    MATCH (l:Lot {projectId: $projectId, number: $lotNumber})
     WHERE l.isDeleted IS NULL OR l.isDeleted = false
     OPTIONAL MATCH (l)-[:IMPLEMENTS]->(itp:ITP_Instance)
+    WHERE itp.isDeleted IS NULL OR itp.isDeleted = false
     OPTIONAL MATCH (l)-[:HAS_NCR]->(ncr:NCR)
+    WHERE ncr.isDeleted IS NULL OR ncr.isDeleted = false
     OPTIONAL MATCH (l)-[:HAS_TEST]->(test:TestRequest)
+    WHERE test.isDeleted IS NULL OR test.isDeleted = false
     OPTIONAL MATCH (l)-[:USES_MATERIAL]->(material:Material)
+    WHERE material.isDeleted IS NULL OR material.isDeleted = false
     OPTIONAL MATCH (l)-[:HAS_QUANTITY]->(qty:Quantity)
+    WHERE qty.isDeleted IS NULL OR qty.isDeleted = false
     OPTIONAL MATCH (l)<-[:RELATED_TO]-(doc:Document)
+    WHERE doc.isDeleted IS NULL OR doc.isDeleted = false
     OPTIONAL MATCH (l)<-[:RELATED_TO]-(photo:Photo)
-    RETURN l,
+    WHERE photo.isDeleted IS NULL OR photo.isDeleted = false
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot,
            collect(DISTINCT itp) as itpInstances,
            collect(DISTINCT ncr) as ncrs,
            collect(DISTINCT test) as tests,
@@ -192,72 +225,118 @@ export const LOT_QUERIES = {
   
   // Get lots with open hold points
   getLotsWithHoldPoints: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     MATCH (l)-[:IMPLEMENTS]->(itp:ITP_Instance)-[:HAS_POINT]->(ip:InspectionPoint)
     WHERE ip.isHoldPoint = true 
       AND ip.status = 'pending'
       AND (l.isDeleted IS NULL OR l.isDeleted = false)
-    RETURN l, count(ip) as holdPointCount
+      AND (itp.isDeleted IS NULL OR itp.isDeleted = false)
+      AND (ip.isDeleted IS NULL OR ip.isDeleted = false)
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot, 
+           count(ip) as holdPointCount
     ORDER BY holdPointCount DESC
   `,
   
   // Get lots by status
   getLotsByStatus: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     WHERE l.status = $status
       AND (l.isDeleted IS NULL OR l.isDeleted = false)
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
     ORDER BY l.number
   `,
   
   // Get lots by work type
   getLotsByWorkType: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     WHERE l.workType = $workType
       AND (l.isDeleted IS NULL OR l.isDeleted = false)
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
     ORDER BY l.number
   `,
   
   // Get lots ready for closeout
   getLotsReadyForCloseout: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     WHERE l.status = 'conformed'
       AND l.percentComplete = 100
       AND (l.isDeleted IS NULL OR l.isDeleted = false)
     OPTIONAL MATCH (l)-[:HAS_NCR]->(ncr:NCR)
     WHERE ncr.status <> 'closed'
+      AND (ncr.isDeleted IS NULL OR ncr.isDeleted = false)
     WITH l, count(ncr) as openNCRs
     WHERE openNCRs = 0
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
     ORDER BY l.conformedDate
   `,
   
   // Create lot
   createLot: `
-    CREATE (l:Lot $properties)
-    SET l.id = randomUUID()
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (l:Lot)
+    SET l = $properties
+    SET l.projectId = $projectId
     SET l.createdAt = datetime()
     SET l.updatedAt = datetime()
     SET l.status = coalesce(l.status, 'open')
     SET l.percentComplete = coalesce(l.percentComplete, 0)
-    WITH l
-    MATCH (p:Project {id: $projectId})
     CREATE (l)-[:BELONGS_TO_PROJECT]->(p)
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
   `,
   
   // Update lot
   updateLot: `
-    MATCH (l:Lot {id: $lotId})
+    MATCH (l:Lot {projectId: $projectId, number: $lotNumber})
     SET l += $properties
     SET l.updatedAt = datetime()
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
   `,
   
   // Update lot status
   updateLotStatus: `
-    MATCH (l:Lot {id: $lotId})
+    MATCH (l:Lot {projectId: $projectId, number: $lotNumber})
     SET l.status = $status
     SET l.updatedAt = datetime()
     SET l.conformedDate = CASE 
@@ -270,21 +349,29 @@ export const LOT_QUERIES = {
       THEN datetime() 
       ELSE l.closedDate 
     END
-    RETURN l
+    RETURN l {
+      .*,
+      startDate: toString(l.startDate),
+      conformedDate: toString(l.conformedDate),
+      closedDate: toString(l.closedDate),
+      createdAt: toString(l.createdAt),
+      updatedAt: toString(l.updatedAt)
+    } as lot
   `,
   
   // Soft delete lot
   deleteLot: `
-    MATCH (l:Lot {id: $lotId})
+    MATCH (l:Lot {projectId: $projectId, number: $lotNumber})
     SET l.isDeleted = true
     SET l.deletedAt = datetime()
+    SET l.deletedBy = $userId
     SET l.updatedAt = datetime()
     RETURN l
   `,
   
   // Get lot statistics for project
   getLotStatistics: `
-    MATCH (p:Project {id: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
     WHERE l.isDeleted IS NULL OR l.isDeleted = false
     RETURN 
       count(l) as totalLots,
@@ -380,4 +467,3 @@ export const LOT_RELATIONSHIPS = {
 export type LotStatus = z.infer<typeof LotStatusEnum>;
 export type CreateLotInput = z.infer<typeof CreateLotInputSchema>;
 export type UpdateLotInput = z.infer<typeof UpdateLotInputSchema>;
-

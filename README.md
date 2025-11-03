@@ -39,6 +39,17 @@ opecodeagents-lucky-demo/
 
 ## Getting Started
 
+### Quick Start - Run All Tasks Automatically
+
+```bash
+cd /app/opecodeagents-lucky-demo
+./run-orchestrator.sh
+```
+
+The orchestrator will execute all 10 agent tasks in the correct order with parallel execution where possible.
+
+### Manual Task Execution
+
 1. Review the `SETUP_COMPLETE.md` for detailed setup information
 2. Check `shared/connection details.md` for database connection configuration
 3. Use `spawn-agent.sh` to launch AI agents for specific tasks
@@ -46,6 +57,8 @@ opecodeagents-lucky-demo/
 
 ## Documentation
 
+- **ORCHESTRATOR_OVERVIEW.txt**: Quick reference for automated execution
+- **ORCHESTRATOR_GUIDE.md**: Complete orchestrator documentation
 - **SETUP_COMPLETE.md**: Complete setup and configuration guide
 - **shared/instructions.md**: Agent operation instructions
 - **shared/Exploration guide.md**: Guide for exploring the system

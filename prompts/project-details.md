@@ -25,11 +25,11 @@ Project details should be extracted from authoritative sources in order of prefe
 ### Core Data Elements
 
 #### Project Identification
-- **Project name** - Primary project name from cover/title blocks
-- **Project code** - Internal project code (if explicitly stated)
-- **Contract number** - Contract identifier from contract documents (clearly marked)
-- **Project description** - One-sentence overview of the project
-- **Scope summary** - Brief summary of work scope
+- **project_name** - Primary project name from cover/title blocks (REQUIRED - use this exact field name)
+- **project_code** - Internal project code (if explicitly stated)
+- **contract_number** - Contract identifier from contract documents (clearly marked)
+- **project_description** - One-sentence overview of the project (use this exact field name, NOT "description")
+- **scope_summary** - Brief summary of work scope
 
 #### Location Information
 - **Project address** - Physical site address (street, suburb, state, postcode)
@@ -104,6 +104,9 @@ Identify the principal organisations and roles and show the hierarchy:
 - Identify reporting relationships
 
 ## HTML Output Requirements
+
+**CRITICAL**: The HTML content MUST be stored directly in the `html_content` field in Neo4j. 
+DO NOT save HTML to a file. DO NOT store file paths. Store the complete HTML string inline in the database.
 
 In addition to structured data, generate a comprehensive HTML document containing:
 
@@ -180,13 +183,31 @@ Do NOT include regulatory standards, codes, QA/QC requirements, acceptance crite
 
 ## Output Format
 
-Your output must conform to the Project schema. See the output schema file copied to your workspace for the exact structure including:
+Your output must conform to the Project schema. See the output schema file copied to your workspace for the exact structure.
 
-- Node labels and properties
-- Required vs optional fields
-- HTML formatting requirements
-- Relationship structure
-- Cypher CREATE statement format
+**CRITICAL FIELD NAMES** (use these EXACT names - the schema is the source of truth):
+- `project_uuid` - Use the UUID provided in the prompt (PRIMARY KEY)
+- `project_name` - NOT "name" (REQUIRED)
+- `project_description` - NOT "description"
+- `project_address` - Location field
+- `project_code` - Internal code
+- `contract_number` - Contract identifier
+- `contract_value` - Contract value with currency
+- `procurement_method` - Contract type
+- `scope_summary` - Brief scope
+- `state_territory` - Full state name
+- `jurisdiction` - Jurisdiction name
+- `jurisdiction_code` - UPPERCASE code [QLD, NSW, VIC, SA, WA, TAS, NT, ACT]
+- `local_council` - Council name
+- `regulatory_framework` - Governing legislation
+- `applicable_standards` - Array of standards
+- `parties` - JSON string with client, principal, parties_mentioned_in_docs
+- `key_dates` - Object with commencement_date, practical_completion_date, defects_liability_period
+- `source_documents` - Array of document IDs
+- `html_content` - Complete HTML string (NOT a file path)
+- `status` - One of: planning, active, on_hold, completed, archived
+- `created_at` - Use datetime()
+- `updated_at` - Use datetime()
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
 
