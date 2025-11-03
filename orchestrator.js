@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * OpenCode Agent Orchestrator
+ * OpenCode Agent Orchestrator v2.0
  * 
- * Manages the execution of multiple agent tasks in the correct order,
- * handling dependencies and parallel execution where possible.
+ * MAJOR CHANGES:
+ * - Uses SINGLE OpenCode server with multiple sessions (not multiple servers)
+ * - Streams ALL events for EVERY session
+ * - Updated for new master schema architecture
+ * - Optimized task dependencies based on schema relationships
  * 
  * Features:
  * - Task dependency management
  * - Parallel execution of independent tasks
  * - Dynamic ITP generation (extracts list from PQP, runs in parallel)
- * - Real-time progress monitoring
+ * - Real-time progress monitoring with full event streaming
  * - Error handling and retry logic
  * - Session tracking and logging
  */
@@ -28,10 +31,10 @@ const CONFIG = {
   WORKSPACE_BASE: '/app/opencode-workspace/agent-sessions',
   AGENT_SPAWNER: '/app/opecodeagents-lucky-demo/spawn-agent.sh',
   LOG_DIR: '/app/opencode-workspace/orchestrator-logs',
-  MAX_PARALLEL: 10, // Maximum parallel agent executions (increased for Wave 1 optimization)
+  MAX_PARALLEL: 10, // Maximum parallel agent executions
   RETRY_ATTEMPTS: 2,
-  TIMEOUT_MS: 900000, // 15 minutes per task (increased for first run)
-  PROJECT_UUID: 'b168e975-2531-527f-9abd-19cb8f502fe0', // Frontend project UUID
+  TIMEOUT_MS: 900000, // 15 minutes per task
+  PROJECT_ID: 'b168e975-2531-527f-9abd-19cb8f502fe0', // Frontend project ID (using projectId not UUID)
 };
 
 // Colors for console output
@@ -53,67 +56,83 @@ function log(message, color = 'reset') {
 }
 
 // Task definitions with dependencies
-// OPTIMIZED: Most tasks run in parallel in Wave 1 since they only read source DBs
+// OPTIMIZED based on new schema relationships
 const TASK_GRAPH = {
   // WAVE 1 (Priority 1): All independent tasks that only read source databases
   'project-details': {
     description: 'Extract project metadata and parties',
     dependencies: [],
-    parallel: true, // Changed: can run in parallel with others
+    parallel: true,
     priority: 1,
+    entities: ['Project', 'WorkType', 'AreaCode'],
   },
   'document-metadata': {
     description: 'Extract document register metadata',
     dependencies: [],
     parallel: true,
     priority: 1,
+    entities: ['Document'],
+  },
+  'standards-extraction': {
+    description: 'Extract referenced standards',
+    dependencies: [],
+    parallel: true,
+    priority: 1,
+    entities: ['Standard'],
   },
   'wbs-extraction': {
     description: 'Extract Work Breakdown Structure',
-    dependencies: [], // Removed: doesn't need project-details (uses project_uuid from prompt)
+    dependencies: [],
     parallel: true,
-    priority: 1, // Changed from 2: can run in Wave 1
+    priority: 1,
+    entities: ['WBSNode'],
   },
   'pqp-generation': {
     description: 'Generate Project Quality Plan',
-    dependencies: [], // Removed: doesn't need project-details or wbs (uses project_uuid from prompt)
-    parallel: true, // Changed: can run in parallel
-    priority: 1, // Changed from 4: can run in Wave 1
+    dependencies: [],
+    parallel: true,
+    priority: 1,
+    entities: ['ManagementPlan'],
   },
   'emp-generation': {
     description: 'Generate Environmental Management Plan',
-    dependencies: [], // Removed: doesn't need project-details or wbs (uses project_uuid from prompt)
+    dependencies: [],
     parallel: true,
-    priority: 1, // Changed from 4: can run in Wave 1
+    priority: 1,
+    entities: ['ManagementPlan'],
   },
   'ohsmp-generation': {
     description: 'Generate OHS Management Plan',
-    dependencies: [], // Removed: doesn't need project-details or wbs (uses project_uuid from prompt)
+    dependencies: [],
     parallel: true,
-    priority: 1, // Changed from 4: can run in Wave 1
+    priority: 1,
+    entities: ['ManagementPlan'],
   },
   'qse-generation': {
     description: 'Generate QSE system content',
-    dependencies: [], // Removed: doesn't need project-details (uses project_uuid from prompt)
+    dependencies: [],
     parallel: true,
-    priority: 1, // Changed from 4: can run in Wave 1
+    priority: 1,
+    entities: ['ManagementPlan', 'Document'],
   },
   
-  // WAVE 2 (Priority 2): Tasks that need WBS from Generated DB
+  // WAVE 2 (Priority 2): LBS needs WBS (MAPPED_TO relationship)
   'lbs-extraction': {
     description: 'Extract Location Breakdown Structure',
-    dependencies: ['wbs-extraction'], // Removed project-details: only needs WBS nodes
+    dependencies: ['wbs-extraction'], // LBS nodes have MAPPED_TO relationships with WBS nodes
     parallel: false,
-    priority: 2, // Changed from 3
+    priority: 2,
+    entities: ['LBSNode'],
   },
   
-  // WAVE 3 (Priority 3): ITP generation needs PQP, WBS, and LBS
+  // WAVE 3 (Priority 3): ITP generation needs PQP (references ITPs), WBS (COVERS_WBS), Standards
   'itp-generation': {
     description: 'Generate ITPs (extracted from PQP)',
-    dependencies: ['pqp-generation', 'wbs-extraction', 'lbs-extraction'],
-    parallel: false, // Will spawn multiple parallel sub-tasks
-    priority: 3, // Changed from 5
-    dynamic: true, // Indicates this task spawns multiple agents
+    dependencies: ['pqp-generation', 'wbs-extraction', 'standards-extraction'],
+    parallel: false,
+    priority: 3,
+    dynamic: true,
+    entities: ['ITPTemplate', 'InspectionPoint'],
   },
 };
 
@@ -173,7 +192,7 @@ function spawnAgentWorkspace(taskName) {
           const sessionId = match[1].trim();
           const workspacePath = `${CONFIG.WORKSPACE_BASE}/${sessionId}`;
           log(`✓ Workspace created: ${sessionId}`, 'green');
-          resolve({ sessionId, workspacePath });
+          resolve({ sessionId: sessionId, workspacePath });
         } else {
           reject(new Error('Could not extract session ID from output'));
         }
@@ -181,32 +200,6 @@ function spawnAgentWorkspace(taskName) {
         reject(new Error(`Spawner failed with code ${code}: ${errorOutput}`));
       }
     });
-  });
-}
-
-// Start OpenCode server in workspace
-function startOpenCodeServer(workspacePath, port) {
-  return new Promise((resolve, reject) => {
-    log(`Starting OpenCode server in: ${workspacePath}`, 'blue');
-    
-    const server = spawn('opencode', ['serve', '--port', port.toString()], {
-      cwd: workspacePath,
-      detached: true,
-      stdio: 'ignore',
-    });
-    
-    server.unref();
-    
-    // Wait for server to start
-    setTimeout(() => {
-      // Test connection
-      request(`http://${CONFIG.OPENCODE_HOST}:${port}/config`)
-        .then(() => {
-          log(`✓ Server started on port ${port}`, 'green');
-          resolve({ pid: server.pid, port });
-        })
-        .catch(reject);
-    }, 2000);
   });
 }
 
@@ -222,28 +215,162 @@ function saveLogs(workspacePath, sessionId, taskName, logs) {
   log(`📝 Logs saved to: ${logFile}`, 'gray');
 }
 
-// Stream events and wait for completion
-function executeAgentTask(sessionId, workspacePath, port, taskName, prompt) {
+// Global event stream manager
+class EventStreamManager {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+    this.sessions = new Map();
+    this.eventStream = null;
+    this.buffer = '';
+  }
+  
+  start() {
+    return new Promise((resolve, reject) => {
+      log('Starting global event stream...', 'blue');
+      
+      const eventUrl = `${this.baseUrl}/event`;
+      
+      http.get(eventUrl, (res) => {
+        this.eventStream = res;
+        
+        res.on('data', (chunk) => {
+          this.buffer += chunk.toString();
+          
+          const events = this.buffer.split('\n\n');
+          this.buffer = events.pop();
+          
+          events.forEach(eventStr => {
+            if (!eventStr.trim()) return;
+            
+            const lines = eventStr.split('\n');
+            let eventData = null;
+            
+            lines.forEach(line => {
+              if (line.startsWith('data: ')) {
+                try {
+                  eventData = JSON.parse(line.substring(6));
+                } catch (e) {}
+              }
+            });
+            
+            if (eventData) {
+              this.handleEvent(eventData);
+            }
+          });
+        });
+        
+        res.on('error', (err) => {
+          log(`Event stream error: ${err.message}`, 'red');
+          reject(err);
+        });
+        
+        // Wait a bit for connection
+        setTimeout(() => {
+          log('✓ Event stream connected', 'green');
+          resolve();
+        }, 1000);
+      }).on('error', reject);
+    });
+  }
+  
+  handleEvent(eventData) {
+    const sessionID = eventData.properties?.sessionID;
+    if (!sessionID) return;
+    
+    const session = this.sessions.get(sessionID);
+    if (!session) return;
+    
+    // Log all events for this session
+    session.eventLog.events.push({
+      timestamp: Date.now(),
+      type: eventData.type,
+      data: eventData,
+    });
+    
+    // Log tool calls for debugging
+    if (eventData.type === 'message.part.updated' && 
+        eventData.properties?.part?.type === 'tool') {
+      const tool = eventData.properties.part.tool;
+      const status = eventData.properties.part.state?.status;
+      const title = eventData.properties.part.state?.title;
+      if (status === 'running' && title) {
+        log(`  [${session.taskName}] 🔧 ${tool}: ${title}`, 'gray');
+      }
+    }
+    
+    // Handle session.idle - task complete
+    if (eventData.type === 'session.idle') {
+      session.eventLog.endTime = Date.now();
+      session.eventLog.duration = session.eventLog.endTime - session.eventLog.startTime;
+      session.eventLog.status = 'completed';
+      
+      // Save logs
+      saveLogs(session.workspacePath, session.fileSessionId, session.taskName, session.eventLog);
+      
+      log(`✓ Task completed: ${session.taskName}`, 'green');
+      session.resolve({ success: true });
+    }
+    
+    // Handle errors
+    if (eventData.type === 'session.error') {
+      session.eventLog.endTime = Date.now();
+      session.eventLog.duration = session.eventLog.endTime - session.eventLog.startTime;
+      session.eventLog.status = 'failed';
+      session.eventLog.error = eventData.properties?.error;
+      
+      // Save logs even on error
+      saveLogs(session.workspacePath, session.fileSessionId, session.taskName, session.eventLog);
+      
+      const error = eventData.properties?.error?.data?.message || 'Unknown error';
+      log(`✗ Task failed: ${session.taskName} - ${error}`, 'red');
+      session.reject(new Error(error));
+    }
+  }
+  
+  registerSession(apiSessionId, fileSessionId, workspacePath, taskName, resolve, reject) {
+    const eventLog = {
+      taskName,
+      fileSessionId,
+      apiSessionId,
+      workspacePath,
+      startTime: Date.now(),
+      events: [],
+    };
+    
+    this.sessions.set(apiSessionId, {
+      fileSessionId,
+      workspacePath,
+      taskName,
+      eventLog,
+      resolve,
+      reject,
+    });
+    
+    return eventLog;
+  }
+  
+  unregisterSession(apiSessionId) {
+    this.sessions.delete(apiSessionId);
+  }
+  
+  stop() {
+    if (this.eventStream) {
+      this.eventStream.destroy();
+    }
+  }
+}
+
+// Execute agent task using existing OpenCode server
+function executeAgentTask(eventManager, fileSessionId, workspacePath, taskName, prompt) {
   return new Promise((resolve, reject) => {
-    const baseUrl = `http://${CONFIG.OPENCODE_HOST}:${port}`;
+    const baseUrl = `http://${CONFIG.OPENCODE_HOST}:${CONFIG.OPENCODE_PORT}`;
     const timeout = setTimeout(() => {
       reject(new Error(`Task timeout after ${CONFIG.TIMEOUT_MS}ms`));
     }, CONFIG.TIMEOUT_MS);
     
     log(`Executing task: ${taskName}`, 'cyan');
     
-    // Collect all events for logging
-    const eventLog = {
-      taskName,
-      sessionId,
-      workspacePath,
-      port,
-      startTime: Date.now(),
-      events: [],
-      prompt,
-    };
-    
-    // Create session
+    // Create session on the shared OpenCode server
     request(`${baseUrl}/session?directory=${encodeURIComponent(workspacePath)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -252,114 +379,25 @@ function executeAgentTask(sessionId, workspacePath, port, taskName, prompt) {
       .then((session) => {
         const apiSessionId = session.id;
         
-        // Start event stream
-        const eventUrl = new URL(`${baseUrl}/event?directory=${encodeURIComponent(workspacePath)}`);
-        
-        http.get(eventUrl, (res) => {
-          let buffer = '';
-          let taskComplete = false;
-          
-          res.on('data', (chunk) => {
-            buffer += chunk.toString();
-            
-            const events = buffer.split('\n\n');
-            buffer = events.pop();
-            
-            events.forEach(eventStr => {
-              if (!eventStr.trim()) return;
-              
-              const lines = eventStr.split('\n');
-              let eventData = null;
-              
-              lines.forEach(line => {
-                if (line.startsWith('data: ')) {
-                  try {
-                    eventData = JSON.parse(line.substring(6));
-                  } catch (e) {}
-                }
-              });
-              
-              if (eventData) {
-                // Log all events
-                eventLog.events.push({
-                  timestamp: Date.now(),
-                  type: eventData.type,
-                  data: eventData,
-                });
-                
-                // Log tool calls for debugging
-                if (eventData.type === 'message.part.updated' && 
-                    eventData.properties?.part?.type === 'tool') {
-                  const tool = eventData.properties.part.tool;
-                  const status = eventData.properties.part.state?.status;
-                  const title = eventData.properties.part.state?.title;
-                  if (status === 'running' && title) {
-                    log(`  🔧 ${tool}: ${title}`, 'gray');
-                  }
-                }
-                
-                // Handle session.idle - task complete
-                if (eventData.type === 'session.idle' && 
-                    eventData.properties?.sessionID === apiSessionId) {
-                  taskComplete = true;
-                  eventLog.endTime = Date.now();
-                  eventLog.duration = eventLog.endTime - eventLog.startTime;
-                  eventLog.status = 'completed';
-                  clearTimeout(timeout);
-                  res.destroy();
-                  
-                  // Save logs
-                  saveLogs(workspacePath, sessionId, taskName, eventLog);
-                  
-                  log(`✓ Task completed: ${taskName}`, 'green');
-                  resolve({ sessionId: apiSessionId, success: true });
-                }
-                
-                // Handle errors
-                if (eventData.type === 'session.error' &&
-                    eventData.properties?.sessionID === apiSessionId) {
-                  eventLog.endTime = Date.now();
-                  eventLog.duration = eventLog.endTime - eventLog.startTime;
-                  eventLog.status = 'failed';
-                  eventLog.error = eventData.properties?.error;
-                  clearTimeout(timeout);
-                  res.destroy();
-                  
-                  // Save logs even on error
-                  saveLogs(workspacePath, sessionId, taskName, eventLog);
-                  
-                  const error = eventData.properties?.error?.data?.message || 'Unknown error';
-                  log(`✗ Task failed: ${taskName} - ${error}`, 'red');
-                  reject(new Error(error));
-                }
-              }
-            });
-          });
-          
-          res.on('end', () => {
-            if (!taskComplete) {
-              eventLog.endTime = Date.now();
-              eventLog.duration = eventLog.endTime - eventLog.startTime;
-              eventLog.status = 'stream_ended';
-              saveLogs(workspacePath, sessionId, taskName, eventLog);
-              clearTimeout(timeout);
-              reject(new Error('Event stream ended unexpectedly'));
-            }
-          });
-          
-          res.on('error', (err) => {
-            eventLog.endTime = Date.now();
-            eventLog.duration = eventLog.endTime - eventLog.startTime;
-            eventLog.status = 'error';
-            eventLog.error = err.message;
-            saveLogs(workspacePath, sessionId, taskName, eventLog);
+        // Register with event manager
+        const eventLog = eventManager.registerSession(
+          apiSessionId,
+          fileSessionId,
+          workspacePath,
+          taskName,
+          (result) => {
             clearTimeout(timeout);
-            reject(err);
-          });
-        }).on('error', (err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
+            eventManager.unregisterSession(apiSessionId);
+            resolve(result);
+          },
+          (error) => {
+            clearTimeout(timeout);
+            eventManager.unregisterSession(apiSessionId);
+            reject(error);
+          }
+        );
+        
+        eventLog.prompt = prompt;
         
         // Send the prompt
         setTimeout(() => {
@@ -373,11 +411,6 @@ function executeAgentTask(sessionId, workspacePath, port, taskName, prompt) {
         }, 1000);
       })
       .catch((err) => {
-        eventLog.endTime = Date.now();
-        eventLog.duration = eventLog.endTime - eventLog.startTime;
-        eventLog.status = 'failed';
-        eventLog.error = err.message;
-        saveLogs(workspacePath, sessionId, taskName, eventLog);
         clearTimeout(timeout);
         reject(err);
       });
@@ -385,18 +418,17 @@ function executeAgentTask(sessionId, workspacePath, port, taskName, prompt) {
 }
 
 // Extract ITP list from PQP
-async function extractITPList(pqpWorkspacePath, port) {
+async function extractITPList(eventManager, pqpWorkspacePath) {
   log('Extracting ITP list from PQP...', 'blue');
   
-  const baseUrl = `http://${CONFIG.OPENCODE_HOST}:${port}`;
+  const baseUrl = `http://${CONFIG.OPENCODE_HOST}:${CONFIG.OPENCODE_PORT}`;
   
-  // Query the Generated DB for ITP requirements from PQP
   const prompt = `Query the Generated database (port 7690) to extract the list of required ITPs from the Project Quality Plan.
 
 Return ONLY a JSON array of ITP names, like this:
 ["Concrete Works ITP", "Steel Reinforcement ITP", "Formwork ITP"]
 
-Query the PQP node and its relationships to find all required inspection and test plans.`;
+Query the ManagementPlan node (type='PQP') and extract all ITP requirements mentioned in the content.`;
   
   try {
     // Create session
@@ -406,7 +438,7 @@ Query the PQP node and its relationships to find all required inspection and tes
       body: JSON.stringify({ title: 'Extract ITP List' }),
     });
     
-    // Send prompt and wait for response
+    // Send prompt
     await request(`${baseUrl}/session/${session.id}/message?directory=${encodeURIComponent(pqpWorkspacePath)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -415,7 +447,7 @@ Query the PQP node and its relationships to find all required inspection and tes
       }),
     });
     
-    // Wait for completion and extract response
+    // Wait for completion
     await new Promise(resolve => setTimeout(resolve, 10000));
     
     const messages = await request(`${baseUrl}/session/${session.id}/message?directory=${encodeURIComponent(pqpWorkspacePath)}`);
@@ -434,7 +466,7 @@ Query the PQP node and its relationships to find all required inspection and tes
       }
     }
     
-    // Fallback: return common ITPs
+    // Fallback
     log('Could not extract ITP list, using defaults', 'yellow');
     return [
       'Concrete Works ITP',
@@ -450,7 +482,7 @@ Query the PQP node and its relationships to find all required inspection and tes
 }
 
 // Execute multiple ITP generation tasks in parallel
-async function executeITPGeneration(itpList, maxParallel) {
+async function executeITPGeneration(eventManager, itpList, maxParallel) {
   log(`Generating ${itpList.length} ITPs in parallel (max ${maxParallel})...`, 'cyan');
   
   const results = [];
@@ -462,21 +494,17 @@ async function executeITPGeneration(itpList, maxParallel) {
         // Spawn workspace
         const { sessionId, workspacePath } = await spawnAgentWorkspace('itp-generation');
         
-        // Allocate port
-        const port = parseInt(CONFIG.OPENCODE_PORT) + results.length + 1;
-        
-        // Start server
-        await startOpenCodeServer(workspacePath, port);
-        
         // Execute task with specific ITP name
-        const projectUuidHeader = `# Project Context\n\n**IMPORTANT: Project UUID**\n\nThis project's UUID is: \`${CONFIG.PROJECT_UUID}\`\n\nAll nodes you create MUST include a \`project_uuid\` property set to this UUID value.\n\n**CRITICAL:** Use \`project_uuid\` (NOT \`id\`, NOT \`project_id\`) everywhere.\n\n---\n\n`;
-        const prompt = projectUuidHeader + `Generate the Inspection and Test Plan (ITP) for: "${itpName}"
+        const projectIdHeader = `# Project Context\n\n**IMPORTANT: Project ID**\n\nThis project's ID is: \`${CONFIG.PROJECT_ID}\`\n\nAll nodes you create MUST include a \`projectId\` property set to this value.\n\n---\n\n`;
+        const prompt = projectIdHeader + `Generate the Inspection and Test Plan (ITP) for: "${itpName}"
 
-Follow the instructions in prompt.md, but focus specifically on this ITP.
+Follow the instructions in prompt.md and AGENT_SCHEMA.md, but focus specifically on this ITP.
 Query the databases for relevant information about this work type.
-Generate the complete ITP structure and write to the Generated database (port 7690).`;
+Generate the complete ITP structure and write to the Generated database (port 7690).
+
+Use business keys (projectId + docNo) - DO NOT generate UUIDs!`;
         
-        await executeAgentTask(sessionId, workspacePath, port, `ITP: ${itpName}`, prompt);
+        await executeAgentTask(eventManager, sessionId, workspacePath, `ITP: ${itpName}`, prompt);
         
         log(`✓ ITP generated: ${itpName}`, 'green');
         return { itpName, success: true };
@@ -492,7 +520,8 @@ Generate the complete ITP structure and write to the Generated database (port 76
     if (executing.length >= maxParallel) {
       const result = await Promise.race(executing);
       results.push(result);
-      executing.splice(executing.findIndex(p => p === promise), 1);
+      const index = executing.findIndex(p => p === promise);
+      if (index > -1) executing.splice(index, 1);
     }
   }
   
@@ -508,8 +537,8 @@ class AgentOrchestrator {
   constructor() {
     this.taskStates = {};
     this.taskResults = {};
-    this.runningTasks = new Map();
     this.startTime = Date.now();
+    this.eventManager = null;
     
     // Initialize task states
     Object.keys(TASK_GRAPH).forEach(task => {
@@ -520,6 +549,13 @@ class AgentOrchestrator {
     if (!fs.existsSync(CONFIG.LOG_DIR)) {
       fs.mkdirSync(CONFIG.LOG_DIR, { recursive: true });
     }
+  }
+  
+  async initialize() {
+    // Start global event stream
+    const baseUrl = `http://${CONFIG.OPENCODE_HOST}:${CONFIG.OPENCODE_PORT}`;
+    this.eventManager = new EventStreamManager(baseUrl);
+    await this.eventManager.start();
   }
   
   // Check if task dependencies are met
@@ -549,22 +585,23 @@ class AgentOrchestrator {
     log(`\n${'='.repeat(80)}`, 'cyan');
     log(`Starting task: ${taskName}`, 'cyan');
     log(`Description: ${task.description}`, 'gray');
+    log(`Entities: ${task.entities.join(', ')}`, 'gray');
     log(`${'='.repeat(80)}\n`, 'cyan');
     
     try {
       // Special handling for ITP generation
       if (taskName === 'itp-generation') {
-        // Get PQP workspace (from previous task)
+        // Get PQP workspace
         const pqpResult = this.taskResults['pqp-generation'];
         if (!pqpResult) {
           throw new Error('PQP generation result not found');
         }
         
         // Extract ITP list
-        const itpList = await extractITPList(pqpResult.workspacePath, pqpResult.port);
+        const itpList = await extractITPList(this.eventManager, pqpResult.workspacePath);
         
         // Generate ITPs in parallel
-        const itpResults = await executeITPGeneration(itpList, CONFIG.MAX_PARALLEL);
+        const itpResults = await executeITPGeneration(this.eventManager, itpList, CONFIG.MAX_PARALLEL);
         
         this.taskStates[taskName] = 'completed';
         this.taskResults[taskName] = {
@@ -580,27 +617,21 @@ class AgentOrchestrator {
       // Standard task execution
       const { sessionId, workspacePath } = await spawnAgentWorkspace(taskName);
       
-      // Allocate unique port
-      const port = parseInt(CONFIG.OPENCODE_PORT) + Object.keys(this.taskResults).length + 1;
-      
-      await startOpenCodeServer(workspacePath, port);
-      
-      // Read the prompt file and inject project_uuid
+      // Read the prompt file and inject projectId
       const promptPath = path.join(workspacePath, 'prompt.md');
       let prompt = fs.readFileSync(promptPath, 'utf8');
       
-      // Prepend project_uuid to the prompt
-      const projectUuidHeader = `# Project Context\n\n**IMPORTANT: Project UUID**\n\nThis project's UUID is: \`${CONFIG.PROJECT_UUID}\`\n\nYou MUST use this exact UUID as the \`project_uuid\` field when creating the Project node in Neo4j.\nAll other nodes you create MUST include a \`project_uuid\` property set to this UUID value.\n\n**CRITICAL:** Use \`project_uuid\` (NOT \`id\`, NOT \`project_id\`) everywhere.\n\n---\n\n`;
-      prompt = projectUuidHeader + prompt;
+      // Prepend projectId to the prompt
+      const projectIdHeader = `# Project Context\n\n**IMPORTANT: Project ID**\n\nThis project's ID is: \`${CONFIG.PROJECT_ID}\`\n\nYou MUST use this exact value as the \`projectId\` field in all nodes you create.\nAll nodes must include \`projectId\` for multi-tenancy.\n\n**Use Business Keys:** Do NOT generate UUIDs. Use natural business keys as defined in AGENT_SCHEMA.md.\n\n---\n\n`;
+      prompt = projectIdHeader + prompt;
       
-      await executeAgentTask(sessionId, workspacePath, port, taskName, prompt);
+      await executeAgentTask(this.eventManager, sessionId, workspacePath, taskName, prompt);
       
       this.taskStates[taskName] = 'completed';
       this.taskResults[taskName] = {
         success: true,
         sessionId,
         workspacePath,
-        port,
       };
       
       log(`✓ Task completed successfully: ${taskName}`, 'green');
@@ -624,8 +655,11 @@ class AgentOrchestrator {
   // Main execution loop
   async run() {
     log('\n╔════════════════════════════════════════════════════════════════╗', 'magenta');
-    log('║          OpenCode Agent Orchestrator - Starting               ║', 'magenta');
+    log('║       OpenCode Agent Orchestrator v2.0 - Starting            ║', 'magenta');
+    log('║       Single Server + Multiple Sessions Architecture         ║', 'magenta');
     log('╚════════════════════════════════════════════════════════════════╝\n', 'magenta');
+    
+    await this.initialize();
     
     log('Task execution plan:', 'cyan');
     Object.entries(TASK_GRAPH).forEach(([name, task]) => {
@@ -666,6 +700,9 @@ class AgentOrchestrator {
         await this.executeTask(task);
       }
     }
+    
+    // Stop event stream
+    this.eventManager.stop();
     
     // Generate report
     this.generateReport();
@@ -740,4 +777,3 @@ if (require.main === module) {
 }
 
 module.exports = { AgentOrchestrator, TASK_GRAPH };
-

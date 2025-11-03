@@ -134,6 +134,16 @@ if [ -f "$PROMPT_SOURCE" ]; then
     print_success "Renamed prompt file to prompt.md"
 fi
 
+# Generate schema files
+print_info "Generating schema documentation..."
+if [ -f "$SCRIPT_DIR/extract-master-schema.js" ] && [ -f "$SCRIPT_DIR/extract-agent-schema.js" ]; then
+    node "$SCRIPT_DIR/extract-master-schema.js" > "$WORKSPACE_DIR/MASTER_SCHEMA.md"
+    node "$SCRIPT_DIR/extract-agent-schema.js" "$TASK_NAME" > "$WORKSPACE_DIR/AGENT_SCHEMA.md"
+    print_success "Generated MASTER_SCHEMA.md and AGENT_SCHEMA.md"
+else
+    print_warning "Schema extractors not found, skipping"
+fi
+
 # Create a session info file
 SESSION_INFO_FILE="$WORKSPACE_DIR/session-info.txt"
 cat > "$SESSION_INFO_FILE" << EOF
@@ -221,16 +231,14 @@ $WORKSPACE_DIR/
 ├── prompt.md                    # Your task-specific instructions
 ├── session-info.txt             # Session information
 ├── README.md                    # This file
-├── shared/                      # Shared infrastructure files
-│   ├── instructions.md
-│   ├── connection details.md
-│   ├── Exploration guide.md
-│   ├── neo4j standards schema.md
-│   ├── neo4j reference docs schema.md
-│   └── neo4j generated schema.md
-└── schemas/                     # Output schema definitions
-    └── neo4j/
-        └── *.schema.ts         # TypeScript schema files
+├── MASTER_SCHEMA.md             # Complete project schema overview
+├── AGENT_SCHEMA.md              # Your specific output schema
+└── shared/                      # Shared infrastructure files
+    ├── instructions.md
+    ├── connection details.md
+    ├── Exploration guide.md
+    ├── neo4j standards schema.md
+    └── neo4j reference docs schema.md
 \`\`\`
 
 ## Output Requirements

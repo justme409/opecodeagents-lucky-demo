@@ -24,11 +24,21 @@ opecodeagents-lucky-demo/
 ## Key Features
 
 ### Schemas
-- Project, Document, and User management
-- Work Breakdown Structure (WBS) and Location Breakdown Structure (LBS)
-- Management Plans (ITP, EMP, OHSMP, PQP, QSE)
-- Quality Control (NCRs, Test Requests, Samples)
-- Progress tracking and approvals
+**Master Schema** (`schemas/neo4j/master-schema.ts`):
+- 26 comprehensive entity types in a single source of truth
+- Business key architecture (no UUIDs)
+- Agent metadata (which agent creates each entity)
+- Page metadata (where each entity is displayed)
+- Relationship definitions (incoming/outgoing)
+- Full TypeScript + Zod validation
+
+**Entity Coverage**:
+- Quality Core: Lot, ITP, Inspection Points, NCR, Tests, Materials
+- Project Structure: WBS, LBS, Work Types, Area Codes
+- Documents & Records: Documents, Photos, Management Plans
+- Progress & Payment: Schedule Items, Claims, Variations, Quantities
+- Reference Data: Standards, Suppliers, Laboratories
+- Infrastructure: Project, Users
 
 ### AI Prompts
 - Document metadata extraction
@@ -57,13 +67,12 @@ The orchestrator will execute all 10 agent tasks in the correct order with paral
 
 ## Documentation
 
-- **ORCHESTRATOR_OVERVIEW.txt**: Quick reference for automated execution
-- **ORCHESTRATOR_GUIDE.md**: Complete orchestrator documentation
-- **SETUP_COMPLETE.md**: Complete setup and configuration guide
+- **schemas/neo4j/MASTER_SCHEMA_GUIDE.md**: Comprehensive guide for using the master schema
+- **schemas/neo4j/MIGRATION_SUMMARY.md**: Schema migration and consolidation summary
+- **schemas/neo4j/master-schema.ts**: Single source of truth for all entities
+- **schemas/neo4j/agent-manifest.ts**: Agent-to-schema mapping and helper functions
 - **shared/instructions.md**: Agent operation instructions
 - **shared/Exploration guide.md**: Guide for exploring the system
-- **schemas/neo4j/README.md**: Database schema documentation
-- **schemas/neo4j/RELATIONSHIPS.md**: Entity relationship documentation
 
 ## License
 
