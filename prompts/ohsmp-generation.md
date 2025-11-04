@@ -301,9 +301,9 @@ Provide matrices/tables including:
 
 You are tasked with generating a comprehensive OHSMP based on project documentation:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in the ManagementPlan entity you create.
 
@@ -338,6 +338,16 @@ You are tasked with generating a comprehensive OHSMP based on project documentat
    - Maintaining links to QSE system items
 
 6. **Write output** to the **Generated Database** (port 7690)
+
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
 
 ## Output Format
 

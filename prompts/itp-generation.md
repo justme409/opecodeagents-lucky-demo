@@ -80,9 +80,9 @@ ITPs typically include these sections (where relevant):
 
 You are tasked with generating a detailed ITP based on the project specification documents available in the Neo4j databases. Your process should be:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL entities you create.
 
@@ -99,7 +99,7 @@ You are tasked with generating a detailed ITP based on the project specification
 
 5. Generate all inspection points with complete details
 
-6. Write the output to the **Generated Database** (port 7690) - **CRITICAL**: All entities MUST include `project_uuid`
+6. Write the output to the **Generated Database** (port 7690) - **CRITICAL**: All entities MUST include `projectId`
 
 ## Standards Matching Process
 
@@ -110,18 +110,29 @@ When matching standards:
 3. **Be specific** - Most ITPs will only need 1-2 standards from their jurisdiction's standard pack
 4. **Consider project context** - Match standards based on work type and project requirements
 
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
+
 ## Output Format
 
 **CRITICAL: Node Label and Field Names**
 
 You MUST use these exact names:
-- **Node Label**: `ITP_Template` (with underscore, NOT `ITP` or `ITPTemplate`)
-- **Project Reference**: `project_uuid` (NOT `project_id` or `id`)
+- **Node Label**: `ITPTemplate` (camelCase, NOT `ITP_Template` or `ITP`)
+- **Project Reference**: `projectId` (camelCase, NOT `projectId` or `project_id`)
 - **Relationship**: `[:BELONGS_TO_PROJECT]` pointing to the Project node
+- **All field names**: Use camelCase (e.g., `docNo`, `workType`, `revisionDate`)
 
 Your output must conform to the ITP_Template schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Required vs optional fields
 - Relationship structure
 - Cypher CREATE statement format
@@ -131,10 +142,10 @@ All output must be written directly to the Generated Database (port 7690) as Neo
 
 **Example Cypher Pattern**:
 ```cypher
-MATCH (p:Project {project_uuid: $projectUuid})
+MATCH (p:Project {projectId: $projectUuid})
 CREATE (itp:ITP_Template {
   id: randomUUID(),
-  project_uuid: $projectUuid,
+  projectId: $projectUuid,
   docNo: "ITP-001",
   description: "...",
   workType: "...",

@@ -25,11 +25,11 @@ Project details should be extracted from authoritative sources in order of prefe
 ### Core Data Elements
 
 #### Project Identification
-- **project_name** - Primary project name from cover/title blocks (REQUIRED - use this exact field name)
-- **project_code** - Internal project code (if explicitly stated)
-- **contract_number** - Contract identifier from contract documents (clearly marked)
-- **project_description** - One-sentence overview of the project (use this exact field name, NOT "description")
-- **scope_summary** - Brief summary of work scope
+- **projectName** - Primary project name from cover/title blocks (REQUIRED - use this exact field name in camelCase)
+- **projectCode** - Internal project code (if explicitly stated)
+- **contractNumber** - Contract identifier from contract documents (clearly marked)
+- **projectDescription** - One-sentence overview of the project (use this exact field name, NOT "description")
+- **scopeSummary** - Brief summary of work scope
 
 #### Location Information
 - **Project address** - Physical site address (street, suburb, state, postcode)
@@ -68,14 +68,14 @@ Project details should be extracted from authoritative sources in order of prefe
 - If a value cannot be confidently determined, use null
 
 ### Project Codes and Identifiers
-Do NOT extract any project/job/contract codes into the main project_code field. Instead:
+Do NOT extract any project/job/contract codes into the main projectCode field. Instead:
 - List all codes in a structured format showing which party owns each code
 - Include code type (Client Project Code, Contractor Code, etc.)
 - Do not invent values - leave blank if unknown
 - The internal project code (our own) must not be invented
 
 ### Jurisdiction Handling
-- When jurisdiction can be inferred, the jurisdiction_code is REQUIRED
+- When jurisdiction can be inferred, the jurisdictionCode is REQUIRED
 - Must be one of [QLD, NSW, VIC, SA, WA, TAS, NT, ACT] in UPPERCASE
 - If only a full state name is present (e.g., "Queensland", "South Australia"), convert to the corresponding code (QLD, SA, etc.)
 - DO NOT output lowercase or any other values
@@ -105,7 +105,7 @@ Identify the principal organisations and roles and show the hierarchy:
 
 ## HTML Output Requirements
 
-**CRITICAL**: The HTML content MUST be stored directly in the `html_content` field in Neo4j. 
+**CRITICAL**: The HTML content MUST be stored directly in the `htmlContent` field in Neo4j. 
 DO NOT save HTML to a file. DO NOT store file paths. Store the complete HTML string inline in the database.
 
 In addition to structured data, generate a comprehensive HTML document containing:
@@ -118,7 +118,7 @@ Do NOT elaborate on scope, methodology, standards, or requirements. No marketing
 ### 2. Key Parties & Hierarchy
 - Parties table with columns: Role, Organisation, ABN/ACN, Primary Contact
 - Org Chart (SVG) showing relationships between organisations
-- Use stable slugs for node IDs (e.g., client_riverdale_city_council)
+- Use stable slugs for node IDs (e.g., clientRiverdaleCityCouncil)
 - Link SVG nodes to Contact Directory anchors
 
 ### 3. Contact Directory (All contacts)
@@ -181,33 +181,43 @@ Do NOT include regulatory standards, codes, QA/QC requirements, acceptance crite
 4. Generate both structured data and HTML output
 5. Write the output to the **Generated Database** (port 7690)
 
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
+
 ## Output Format
 
 Your output must conform to the Project schema. See the output schema file copied to your workspace for the exact structure.
 
-**CRITICAL FIELD NAMES** (use these EXACT names - the schema is the source of truth):
-- `project_id` - Use the UUID provided in the prompt (PRIMARY KEY)
-- `project_name` - NOT "name" (REQUIRED)
-- `project_description` - NOT "description"
-- `project_address` - Location field
-- `project_code` - Internal code
-- `contract_number` - Contract identifier
-- `contract_value` - Contract value with currency
-- `procurement_method` - Contract type
-- `scope_summary` - Brief scope
-- `state_territory` - Full state name
+**CRITICAL FIELD NAMES** (use these EXACT names in camelCase - the schema is the source of truth):
+- `projectId` - Use the UUID provided in the prompt (PRIMARY KEY)
+- `projectName` - NOT "name" (REQUIRED)
+- `projectDescription` - NOT "description"
+- `projectAddress` - Location field
+- `projectCode` - Internal code
+- `contractNumber` - Contract identifier
+- `contractValue` - Contract value with currency
+- `procurementMethod` - Contract type
+- `scopeSummary` - Brief scope
+- `stateTerritory` - Full state name
 - `jurisdiction` - Jurisdiction name
-- `jurisdiction_code` - UPPERCASE code [QLD, NSW, VIC, SA, WA, TAS, NT, ACT]
-- `local_council` - Council name
-- `regulatory_framework` - Governing legislation
-- `applicable_standards` - Array of standards
-- `parties` - JSON string with client, principal, parties_mentioned_in_docs
-- `key_dates` - Object with commencement_date, practical_completion_date, defects_liability_period
-- `source_documents` - Array of document IDs
-- `html_content` - Complete HTML string (NOT a file path)
+- `jurisdictionCode` - UPPERCASE code [QLD, NSW, VIC, SA, WA, TAS, NT, ACT]
+- `localCouncil` - Council name
+- `regulatoryFramework` - Governing legislation
+- `applicableStandards` - Array of standards
+- `parties` - JSON string with client, principal, partiesMentionedInDocs
+- `keyDates` - Object with commencementDate, practicalCompletionDate, defectsLiabilityPeriod
+- `sourceDocuments` - Array of document IDs
+- `htmlContent` - Complete HTML string (NOT a file path)
 - `status` - One of: planning, active, on_hold, completed, archived
-- `created_at` - Use datetime()
-- `updated_at` - Use datetime()
+- `createdAt` - Use datetime()
+- `updatedAt` - Use datetime()
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
 

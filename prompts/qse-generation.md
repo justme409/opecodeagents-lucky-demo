@@ -250,9 +250,9 @@ Use consistent:
 
 You are tasked with generating QSE system content:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL entities you create (ManagementPlan, Document, etc.).
 
@@ -299,11 +299,21 @@ Generate high-quality HTML content for each QSE item:
 - **Hyperlinks** - To related procedures and references
 - **Print-friendly** - Suitable for PDF generation
 
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
+
 ## Output Format
 
 Your output must conform to the QSE System schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Item types (procedure, form, policy, etc.)
 - HTML content format
 - Relationship structure

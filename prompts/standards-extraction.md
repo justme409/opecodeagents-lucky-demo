@@ -124,7 +124,7 @@ For each extracted standard:
    - Version/year
    - Jurisdiction
 
-5. **Set found_in_database flag**:
+5. **Set foundInDatabase flag**:
    - `true` - If standard found in database
    - `false` - If standard not found in database
 
@@ -189,22 +189,22 @@ Standards databases are organized by jurisdiction:
 
 For each standard extracted, provide:
 
-- **standard_code** - Code as mentioned in document (e.g., "AS 1379", "MRTS04")
+- **standardCode** - Code as mentioned in document (e.g., "AS 1379", "MRTS04")
 - **uuid** - UUID from reference database (if found)
-- **spec_name** - Full name from reference database (if found)
-- **org_identifier** - Organization identifier from database (if found)
-- **section_reference** - Specific section/clause referenced (if applicable)
+- **specName** - Full name from reference database (if found)
+- **orgIdentifier** - Organization identifier from database (if found)
+- **sectionReference** - Specific section/clause referenced (if applicable)
 - **context** - Context of how standard is referenced
-- **found_in_database** - Boolean flag
-- **document_ids** - List of document IDs where standard was found
+- **foundInDatabase** - Boolean flag
+- **documentIds** - List of document IDs where standard was found
 
 ## Task Instructions
 
 You are tasked with extracting all standards references from project documentation:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL Standard entities you create.
 
@@ -228,7 +228,7 @@ You are tasked with extracting all standards references from project documentati
    - Searching Standards Database for each extracted code
    - Filtering by project jurisdiction
    - Extracting database metadata if found
-   - Setting found_in_database flag appropriately
+   - Setting foundInDatabase flag appropriately
 
 5. **Compile output** with:
    - Deduplicated list of unique standards
@@ -260,7 +260,7 @@ RETURN s
 **Search for specific standard:**
 ```cypher
 MATCH (s:Standard)
-WHERE s.code = $standard_code 
+WHERE s.code = $standardCode 
   AND (s.jurisdiction = $jurisdiction OR s.jurisdiction = 'National')
 RETURN s
 ```
@@ -268,7 +268,7 @@ RETURN s
 **Fuzzy search:**
 ```cypher
 MATCH (s:Standard)
-WHERE s.code CONTAINS $code_fragment
+WHERE s.code CONTAINS $codeFragment
   AND (s.jurisdiction = $jurisdiction OR s.jurisdiction = 'National')
 RETURN s
 ```
@@ -284,11 +284,21 @@ Before finalizing the standards register:
 - Ensure no duplicate entries
 - Check that context information is meaningful
 
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
+
 ## Output Format
 
 Your output must conform to the Standards reference schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Required vs optional fields
 - Relationship structure
 - Database linkage format

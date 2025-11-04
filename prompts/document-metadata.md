@@ -64,16 +64,16 @@ Non-drawing documents including:
 
 ### Core Fields
 
-**doc_kind** (REQUIRED)
+**docKind** (REQUIRED)
 - Either "drawing" or "document"
 - Based on evidence in filename and content
 
-**document_number** (string or null)
+**documentNumber** (string or null)
 - Unique document identifier
 - Extract from title block or document header
 - Examples: "C-001", "SPEC-123", "DWG-A-101"
 
-**revision_code** (string or null)
+**revisionCode** (string or null)
 - Revision identifier
 - Common formats: "A", "B", "C" or "R0", "R1", "R2" or "Rev A", "Rev 1"
 - Extract from revision field in title block
@@ -88,18 +88,18 @@ Non-drawing documents including:
 - Options: Civil, Structural, Electrical, Mechanical, Architectural, Hydraulic, Geotechnical
 - Extract from discipline field or infer from content
 
-**classification_level** (string or null)
+**classificationLevel** (string or null)
 - Security/confidentiality classification
 - Common values: Internal, Confidential, Public, Commercial in Confidence
 - Default to "Internal" if not stated
 
 ### Drawing-Specific Fields
 
-**sheet_number** (string or null)
+**sheetNumber** (string or null)
 - Sheet number within document set
 - Example: "1", "2 of 10", "A-101"
 
-**total_sheets** (integer or null)
+**totalSheets** (integer or null)
 - Total number of sheets in document set
 - Extract from "Sheet X of Y" notation
 
@@ -116,17 +116,17 @@ Non-drawing documents including:
 **subtype** (string or null)
 - More specific document type
 - Non-prescriptive label inferred from evidence
-- Examples for documents: general_spec, technical_spec, method_statement, contract_conditions
-- Examples for drawings: general_arrangement, section, elevation, detail, plan, schedule, diagram, layout
+- Examples for documents: generalSpec, technicalSpec, methodStatement, contractConditions
+- Examples for drawings: generalArrangement, section, elevation, detail, plan, schedule, diagram, layout
 
 ### Additional Fields
 
-**additional_fields** (JSON string or null)
+**additionalFields** (JSON string or null)
 - Additional metadata not covered by standard fields
 - Must be a valid JSON object encoded as a string
-- Example: `"{\"edition\":\"3rd\",\"issuing_body\":\"TfNSW\"}"`
+- Example: `"{\"edition\":\"3rd\",\"issuingBody\":\"TfNSW\"}"`
 - Do NOT return structured objects - return a string
-- Common fields: edition, issuing_body, prepared_by, approved_by, date_issued
+- Common fields: edition, issuingBody, preparedBy, approvedBy, dateIssued
 
 ## Extraction Guidelines
 
@@ -220,36 +220,36 @@ When discipline is not explicitly stated, infer from:
 **Category:** specification
 
 **Subtypes:**
-- general_spec - General specifications
-- technical_spec - Technical/detailed specifications
-- performance_spec - Performance-based specifications
+- generalSpec - General specifications
+- technicalSpec - Technical/detailed specifications
+- performanceSpec - Performance-based specifications
 
 ### Report Documents
 
 **Category:** report
 
 **Subtypes:**
-- test_report - Laboratory test reports
-- technical_report - Engineering analysis reports
-- inspection_report - Inspection and audit reports
-- survey_report - Survey reports
+- testReport - Laboratory test reports
+- technicalReport - Engineering analysis reports
+- inspectionReport - Inspection and audit reports
+- surveyReport - Survey reports
 
 ### Contract Documents
 
 **Category:** contract
 
 **Subtypes:**
-- contract_conditions - General and special conditions
-- contract_schedule - Contract schedules
-- tender_documents - Tender documentation
+- contractConditions - General and special conditions
+- contractSchedule - Contract schedules
+- tenderDocuments - Tender documentation
 
 ## Task Instructions
 
 You are tasked with extracting document metadata from project files:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL Document entities you create.
 
@@ -265,24 +265,34 @@ You are tasked with extracting document metadata from project files:
    - Set null for fields without evidence
 
 3. **Classify systematically**:
-   - Determine doc_kind first
+   - Determine docKind first
    - Extract core fields
    - Extract type-specific fields (drawing vs document)
-   - Compile additional_fields if present
+   - Compile additionalFields if present
 
 4. **Validate extraction**:
-   - Ensure doc_kind is set
+   - Ensure docKind is set
    - Check that drawing-specific fields are only set for drawings
-   - Verify additional_fields is a valid JSON string (not object)
+   - Verify additionalFields is a valid JSON string (not object)
    - Confirm all values have supporting evidence
 
 5. **Write output** to the **Generated Database** (port 7690)
+
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
 
 ## Output Format
 
 Your output must conform to the Document schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Required vs optional fields
 - Field data types
 - Validation rules

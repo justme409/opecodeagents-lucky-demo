@@ -127,9 +127,9 @@ The WBS is structured as an adjacency list where:
 
 You are tasked with extracting a comprehensive WBS from project documentation:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL WBSNode entities you create.
 
@@ -183,16 +183,26 @@ Before finalizing the WBS:
 
 - Verify all nodes have unique IDs
 - Confirm all parent IDs reference existing nodes (except root)
-- Ensure leaf nodes are marked correctly (`is_leaf_node: true`)
+- Ensure leaf nodes are marked correctly (`isLeafNode: true`)
 - Validate specification references exist in the Standards database
 - Check that ITP requirements align with specification requirements
 - Confirm source document references are accurate
+
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
 
 ## Output Format
 
 Your output must conform to the WBS Node schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Required vs optional fields
 - Relationship structure (parent-child via parentId)
 - Specification linkage format

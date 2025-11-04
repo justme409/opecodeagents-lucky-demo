@@ -49,7 +49,7 @@ export interface EntityMetadata {
  * Reference data for construction area codes
  */
 export interface AreaCodeNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   description: string;
   metadata?: Record<string, any>;
@@ -247,31 +247,34 @@ export const InspectionPointSchema = z.object({
 });
 
 export const INSPECTION_POINT_QUERIES = {
-  getAll: `
-    MATCH (ip:InspectionPoint {project_id: $projectId})
+  getAllPoints: `
+    MATCH (ip:InspectionPoint {projectId: $projectId})
+    WHERE COALESCE(ip.isDeleted, false) = false
     RETURN ip
     ORDER BY ip.sequence
   `,
-  getByParent: `
-    MATCH (ip:InspectionPoint {project_id: $projectId, parentType: $parentType, parentKey: $parentKey})
+  getPendingPoints: `
+    MATCH (ip:InspectionPoint {projectId: $projectId, status: 'pending'})
+    WHERE COALESCE(ip.isDeleted, false) = false
     RETURN ip
     ORDER BY ip.sequence
   `,
-  create: `
+  getHoldPoints: `
+    MATCH (ip:InspectionPoint {projectId: $projectId, type: 'hold'})
+    WHERE COALESCE(ip.isDeleted, false) = false
+    RETURN ip
+    ORDER BY ip.sequence
+  `,
+  createPoint: `
+    MATCH (p:Project {projectId: $projectId})
     CREATE (ip:InspectionPoint {
-      project_id: $project_id,
-      parentType: $parentType,
-      parentKey: $parentKey,
-      sequence: $sequence,
-      description: $description,
-      type: $type,
-      status: $status,
-      requirement: $requirement,
-      isHoldPoint: $isHoldPoint,
-      isWitnessPoint: $isWitnessPoint,
+      projectId: $projectId,
       createdAt: datetime(),
-      updatedAt: datetime()
+      updatedAt: datetime(),
+      isDeleted: false
     })
+    SET ip += $properties
+    MERGE (ip)-[:BELONGS_TO_PROJECT]->(p)
     RETURN ip
   `,
 };
@@ -283,7 +286,7 @@ export const INSPECTION_POINT_QUERIES = {
  * Lot-specific instance of an ITP template
  */
 export interface ITPInstanceNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   lotNumber: string;
   templateDocNo: string;
   status: 'pending' | 'in_progress' | 'completed' | 'approved';
@@ -317,31 +320,61 @@ export const ITPInstanceMetadata: EntityMetadata = {
 };
 
 export const ITPInstanceSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   lotNumber: z.string(),
   templateDocNo: z.string(),
   status: z.enum(['pending', 'in_progress', 'completed', 'approved']),
+  startDate: z.coerce.date().optional(),
+  completedDate: z.coerce.date().optional(),
+  approvedDate: z.coerce.date().optional(),
+  approvedBy: z.string().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateITPInstanceInputSchema = z.object({
+  lotNumber: z.string(),
+  templateDocNo: z.string(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'approved']).default('pending'),
+  startDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateITPInstanceInput = z.infer<typeof CreateITPInstanceInputSchema>;
+
 export const ITP_INSTANCE_QUERIES = {
-  getAll: `
-    MATCH (i:ITPInstance {project_id: $projectId})
+  getAllInstances: `
+    MATCH (i:ITPInstance {projectId: $projectId})
+    WHERE COALESCE(i.isDeleted, false) = false
+    RETURN i
+    ORDER BY i.lotNumber, i.templateDocNo
+  `,
+  getInProgressInstances: `
+    MATCH (i:ITPInstance {projectId: $projectId, status: 'in_progress'})
+    WHERE COALESCE(i.isDeleted, false) = false
     RETURN i
     ORDER BY i.lotNumber
   `,
-  getByLot: `
-    MATCH (i:ITPInstance {project_id: $projectId, lotNumber: $lotNumber})
+  getInstancesByLot: `
+    MATCH (i:ITPInstance {projectId: $projectId, lotNumber: $lotNumber})
+    WHERE COALESCE(i.isDeleted, false) = false
     RETURN i
+    ORDER BY i.templateDocNo
   `,
-  create: `
+  createInstance: `
+    MATCH (p:Project {projectId: $projectId})
     CREATE (i:ITPInstance {
-      project_id: $project_id,
+      projectId: $projectId,
       lotNumber: $lotNumber,
       templateDocNo: $templateDocNo,
-      status: $status,
+      status: coalesce($status, 'pending'),
+      startDate: $startDate,
+      notes: $notes,
       createdAt: datetime(),
-      updatedAt: datetime()
+      updatedAt: datetime(),
+      isDeleted: false
     })
+    SET i += coalesce($properties, {})
+    MERGE (i)-[:BELONGS_TO_PROJECT]->(p)
     RETURN i
   `,
 };
@@ -398,41 +431,95 @@ export const ITPTemplateMetadata: EntityMetadata = {
 };
 
 export const ITPTemplateSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   docNo: z.string(),
   description: z.string(),
   workType: z.string(),
   specRef: z.string(),
+  jurisdiction: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  applicableStandards: z.array(z.string()).optional(),
+  scopeOfWork: z.string().optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded']),
   approvalStatus: z.enum(['not_required', 'pending', 'approved', 'rejected']),
   revisionDate: z.coerce.date(),
   revisionNumber: z.string(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateITPTemplateInputSchema = z.object({
+  docNo: z.string(),
+  description: z.string(),
+  workType: z.string(),
+  specRef: z.string(),
+  jurisdiction: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  applicableStandards: z.array(z.string()).optional(),
+  scopeOfWork: z.string().optional(),
+  status: z.enum(['draft', 'in_review', 'approved', 'superseded']).default('draft'),
+  approvalStatus: z.enum(['not_required', 'pending', 'approved', 'rejected']).default('pending'),
+  revisionDate: z.coerce.date(),
+  revisionNumber: z.string(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateITPTemplateInput = z.infer<typeof CreateITPTemplateInputSchema>;
+
 export const ITP_TEMPLATE_QUERIES = {
-  getAll: `
-    MATCH (t:ITPTemplate {project_id: $projectId})
+  getAllTemplates: `
+    MATCH (t:ITPTemplate {projectId: $projectId})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+    ORDER BY t.docNo
+  `,
+  getTemplatesByWorkType: `
+    MATCH (t:ITPTemplate {projectId: $projectId, workType: $workType})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+    ORDER BY t.docNo
+  `,
+  getApprovedTemplates: `
+    MATCH (t:ITPTemplate {projectId: $projectId, status: 'approved'})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+    ORDER BY t.docNo
+  `,
+  getTemplatesPendingApproval: `
+    MATCH (t:ITPTemplate {projectId: $projectId, approvalStatus: 'pending'})
+    WHERE COALESCE(t.isDeleted, false) = false
     RETURN t
     ORDER BY t.docNo
   `,
   getByDocNo: `
-    MATCH (t:ITPTemplate {project_id: $projectId, docNo: $docNo})
+    MATCH (t:ITPTemplate {projectId: $projectId, docNo: $docNo})
+    WHERE COALESCE(t.isDeleted, false) = false
     RETURN t
   `,
-  create: `
+  createTemplate: `
+    MATCH (p:Project {projectId: $projectId})
     CREATE (t:ITPTemplate {
-      project_id: $project_id,
+      projectId: $projectId,
       docNo: $docNo,
       description: $description,
       workType: $workType,
       specRef: $specRef,
-      status: $status,
-      approvalStatus: $approvalStatus,
+      jurisdiction: $jurisdiction,
+      applicableStandards: $applicableStandards,
+      scopeOfWork: $scopeOfWork,
+      status: coalesce($status, 'draft'),
+      approvalStatus: coalesce($approvalStatus, 'pending'),
       revisionDate: $revisionDate,
       revisionNumber: $revisionNumber,
+      approvedBy: $approvedBy,
+      approvedDate: $approvedDate,
+      notes: $notes,
       createdAt: datetime(),
-      updatedAt: datetime()
+      updatedAt: datetime(),
+      isDeleted: false
     })
+    MERGE (t)-[:BELONGS_TO_PROJECT]->(p)
     RETURN t
   `,
 };
@@ -607,10 +694,12 @@ export const LotMetadata: EntityMetadata = {
   },
 };
 
+export const LotStatusEnum = z.enum(['open', 'in_progress', 'conformed', 'closed']);
+
 export const LotSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
-  status: z.enum(['open', 'in_progress', 'conformed', 'closed']),
+  status: LotStatusEnum,
   percentComplete: z.number(),
   description: z.string(),
   workType: z.string(),
@@ -618,16 +707,156 @@ export const LotSchema = z.object({
   startChainage: z.number(),
   endChainage: z.number(),
   startDate: z.coerce.date(),
+  notes: z.string().optional(),
 });
 
+export const CreateLotInputSchema = z.object({
+  number: z.string(),
+  description: z.string(),
+  workType: z.string(),
+  areaCode: z.string(),
+  status: LotStatusEnum.default('open'),
+  percentComplete: z.number().min(0).max(100).default(0),
+  startChainage: z.coerce.number(),
+  endChainage: z.coerce.number(),
+  startDate: z.coerce.date(),
+  notes: z.string().optional(),
+});
+
+export type CreateLotInput = z.infer<typeof CreateLotInputSchema>;
+
+export const UpdateLotInputSchema = z.object({
+  status: LotStatusEnum.optional(),
+  percentComplete: z.number().min(0).max(100).optional(),
+  description: z.string().optional(),
+  workType: z.string().optional(),
+  areaCode: z.string().optional(),
+  startChainage: z.coerce.number().optional(),
+  endChainage: z.coerce.number().optional(),
+  startDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateLotInput = z.infer<typeof UpdateLotInputSchema>;
+
+export interface LotWithRelationships extends LotNode {
+  relationships: {
+    belongsToProject: string;
+    implements: string[];
+    hasNCR: string[];
+    hasTest: string[];
+    usesMaterial: string[];
+    hasQuantity: string[];
+    relatedDocuments: string[];
+    relatedPhotos: string[];
+  };
+  itpInstances: ITPInstanceNode[];
+  ncrs: NCRNode[];
+  tests: TestRequestNode[];
+  materials: MaterialNode[];
+  quantities: QuantityNode[];
+  documents: DocumentNode[];
+  photos: PhotoNode[];
+}
+
 export const LOT_QUERIES = {
-  getAll: `
-    MATCH (l:Lot {project_id: $projectId})
+  getAllLots: `
+    MATCH (l:Lot {projectId: $projectId})
+    WHERE COALESCE(l.isDeleted, false) = false
     RETURN l
     ORDER BY l.number
   `,
-  getByNumber: `
-    MATCH (l:Lot {project_id: $projectId, number: $number})
+  getLotsByStatus: `
+    MATCH (l:Lot {projectId: $projectId, status: $status})
+    WHERE COALESCE(l.isDeleted, false) = false
+    RETURN l
+    ORDER BY l.number
+  `,
+  getLotsByWorkType: `
+    MATCH (l:Lot {projectId: $projectId, workType: $workType})
+    WHERE COALESCE(l.isDeleted, false) = false
+    RETURN l
+    ORDER BY l.number
+  `,
+  getLotDetail: `
+    MATCH (l:Lot {projectId: $projectId, number: $number})
+    WHERE COALESCE(l.isDeleted, false) = false
+    OPTIONAL MATCH (l)-[:IMPLEMENTS]->(inst:ITPInstance)
+    OPTIONAL MATCH (l)<-[:RELATED_TO]-(n:NCR)
+    OPTIONAL MATCH (l)<-[:FOR_LOT]-(test:TestRequest)
+    OPTIONAL MATCH (l)-[:USES_MATERIAL]->(m:Material)
+    OPTIONAL MATCH (l)-[:HAS_QUANTITY]->(q:Quantity)
+    OPTIONAL MATCH (l)<-[:REFERENCES]-(doc:Document)
+    OPTIONAL MATCH (l)<-[:RELATED_TO]-(photo:Photo)
+    WITH l,
+         collect(DISTINCT inst) AS insts,
+         collect(DISTINCT n) AS ncrs,
+         collect(DISTINCT test) AS tests,
+         collect(DISTINCT m) AS materials,
+         collect(DISTINCT q) AS quantities,
+         collect(DISTINCT doc) AS documents,
+         collect(DISTINCT photo) AS photos
+    RETURN l {
+      .* ,
+      id: toString(id(l)),
+      itpInstances: insts,
+      ncrs: ncrs,
+      tests: tests,
+      materials: materials,
+      quantities: quantities,
+      documents: documents,
+      photos: photos,
+      relationships: {
+        belongsToProject: l.projectId,
+        implements: [inst IN insts | toString(id(inst))],
+        hasNCR: [n IN ncrs | toString(id(n))],
+        hasTest: [t IN tests | toString(id(t))],
+        usesMaterial: [m IN materials | toString(id(m))],
+        hasQuantity: [q IN quantities | toString(id(q))],
+        relatedDocuments: [d IN documents | toString(id(d))],
+        relatedPhotos: [p IN photos | toString(id(p))]
+      }
+    }
+  `,
+  createLot: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (l:Lot {
+      projectId: $projectId,
+      number: $number,
+      status: coalesce($status, 'open'),
+      percentComplete: coalesce($percentComplete, 0),
+      description: $description,
+      workType: $workType,
+      areaCode: $areaCode,
+      startChainage: $startChainage,
+      endChainage: $endChainage,
+      startDate: $startDate,
+      notes: $notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (l)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN l
+  `,
+  updateLot: `
+    MATCH (l:Lot {projectId: $projectId, number: $number})
+    WHERE COALESCE(l.isDeleted, false) = false
+    SET l += $properties,
+        l.updatedAt = datetime()
+    RETURN l
+  `,
+  updateLotStatus: `
+    MATCH (l:Lot {projectId: $projectId, number: $number})
+    WHERE COALESCE(l.isDeleted, false) = false
+    SET l.status = $status,
+        l.updatedAt = datetime()
+    RETURN l
+  `,
+  deleteLot: `
+    MATCH (l:Lot {projectId: $projectId, number: $number})
+    SET l.isDeleted = true,
+        l.updatedAt = datetime()
     RETURN l
   `,
 };
@@ -879,23 +1108,73 @@ export const NCRMetadata: EntityMetadata = {
 };
 
 export const NCRSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
   description: z.string(),
   severity: z.enum(['minor', 'major', 'critical']),
   status: z.enum(['open', 'investigation', 'resolution_proposed', 'approved', 'closed']),
   raisedDate: z.coerce.date(),
   raisedBy: z.string(),
+  lotNumber: z.string().optional(),
+  rootCause: z.string().optional(),
+  proposedResolution: z.string().optional(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
 });
 
+export const CreateNCRInputSchema = z.object({
+  number: z.string().optional(),
+  description: z.string(),
+  severity: z.enum(['minor', 'major', 'critical']).default('minor'),
+  lotNumber: z.string(),
+  raisedBy: z.string(),
+  rootCause: z.string().optional(),
+  proposedResolution: z.string().optional(),
+});
+
+export type CreateNCRInput = z.infer<typeof CreateNCRInputSchema>;
+
 export const NCR_QUERIES = {
-  getAll: `
-    MATCH (n:NCR {project_id: $projectId})
+  getAllNCRs: `
+    MATCH (n:NCR {projectId: $projectId})
+    WHERE COALESCE(n.isDeleted, false) = false
+    RETURN n
+    ORDER BY n.raisedDate DESC
+  `,
+  getOpenNCRs: `
+    MATCH (n:NCR {projectId: $projectId})
+    WHERE COALESCE(n.isDeleted, false) = false
+      AND n.status IN ['open', 'investigation', 'resolution_proposed']
     RETURN n
     ORDER BY n.raisedDate DESC
   `,
   getByNumber: `
-    MATCH (n:NCR {project_id: $projectId, number: $number})
+    MATCH (n:NCR {projectId: $projectId, number: $number})
+    WHERE COALESCE(n.isDeleted, false) = false
+    RETURN n
+  `,
+  createNCR: `
+    MATCH (p:Project {projectId: $projectId})
+    OPTIONAL MATCH (l:Lot {projectId: $projectId, number: $lotNumber})
+    CREATE (n:NCR {
+      projectId: $projectId,
+      number: coalesce($number, toString(randomUUID())),
+      description: $description,
+      severity: coalesce($severity, 'minor'),
+      status: 'open',
+      raisedDate: datetime(),
+      raisedBy: $raisedBy,
+      lotNumber: $lotNumber,
+      rootCause: $rootCause,
+      proposedResolution: $proposedResolution,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (n)-[:BELONGS_TO_PROJECT]->(p)
+    FOREACH (_ IN CASE WHEN l IS NULL THEN [] ELSE [1] END |
+      MERGE (n)-[:RELATED_TO]->(l)
+    )
     RETURN n
   `,
 };
@@ -907,32 +1186,32 @@ export const NCR_QUERIES = {
  * Root project node
  */
 export interface ProjectNode {
-  project_id: string;  // PRIMARY KEY - matches Neo4j implementation
-  project_name: string;  // REQUIRED - Primary project name
-  project_code?: string;  // Internal project code
-  contract_number?: string;  // Contract identifier
-  project_description?: string;  // One-sentence overview
-  scope_summary?: string;  // Brief summary of work scope
-  project_address?: string;  // Physical site address
-  state_territory?: string;  // Australian state/territory
+  projectId: string;  // PRIMARY KEY - matches Neo4j implementation
+  projectName: string;  // REQUIRED - Primary project name
+  projectCode?: string;  // Internal project code
+  contractNumber?: string;  // Contract identifier
+  projectDescription?: string;  // One-sentence overview
+  scopeSummary?: string;  // Brief summary of work scope
+  projectAddress?: string;  // Physical site address
+  stateTerritory?: string;  // Australian state/territory
   jurisdiction?: string;  // Governing jurisdiction
-  jurisdiction_code?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';  // UPPERCASE code
-  local_council?: string;  // Local authority/council name
-  contract_value?: string;  // Monetary value with currency
-  procurement_method?: string;  // Contract type (D&C, EPC, lump sum, etc.)
-  regulatory_framework?: string;  // Governing legislation
-  applicable_standards?: string[];  // Referenced standards and codes
+  jurisdictionCode?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';  // UPPERCASE code
+  localCouncil?: string;  // Local authority/council name
+  contractValue?: string;  // Monetary value with currency
+  procurementMethod?: string;  // Contract type (D&C, EPC, lump sum, etc.)
+  regulatoryFramework?: string;  // Governing legislation
+  applicableStandards?: string[];  // Referenced standards and codes
   parties?: string;  // JSON string with client, principal, parties_mentioned_in_docs
-  key_dates?: {
-    commencement_date?: string;
-    practical_completion_date?: string;
-    defects_liability_period?: string;
+  keyDates?: {
+    commencementDate?: string;
+    practicalCompletionDate?: string;
+    defectsLiabilityPeriod?: string;
   };
-  source_documents?: string[];  // Document IDs used for extraction
-  html_content?: string;  // Complete HTML string (NOT a file path)
+  sourceDocuments?: string[];  // Document IDs used for extraction
+  htmlContent?: string;  // Complete HTML string (NOT a file path)
   status?: 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const ProjectMetadata: EntityMetadata = {
@@ -952,66 +1231,66 @@ export const ProjectMetadata: EntityMetadata = {
 };
 
 export const ProjectSchema = z.object({
-  project_id: z.string(),  // PRIMARY KEY
-  project_name: z.string(),
-  project_code: z.string().optional(),
-  contract_number: z.string().optional(),
-  project_description: z.string().optional(),
-  scope_summary: z.string().optional(),
-  project_address: z.string().optional(),
-  state_territory: z.string().optional(),
+  projectId: z.string(),  // PRIMARY KEY
+  projectName: z.string(),
+  projectCode: z.string().optional(),
+  contractNumber: z.string().optional(),
+  projectDescription: z.string().optional(),
+  scopeSummary: z.string().optional(),
+  projectAddress: z.string().optional(),
+  stateTerritory: z.string().optional(),
   jurisdiction: z.string().optional(),
-  jurisdiction_code: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
-  local_council: z.string().optional(),
-  contract_value: z.string().optional(),
-  procurement_method: z.string().optional(),
-  regulatory_framework: z.string().optional(),
-  applicable_standards: z.array(z.string()).optional(),
+  jurisdictionCode: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  localCouncil: z.string().optional(),
+  contractValue: z.string().optional(),
+  procurementMethod: z.string().optional(),
+  regulatoryFramework: z.string().optional(),
+  applicableStandards: z.array(z.string()).optional(),
   parties: z.string().optional(),
-  key_dates: z.object({
-    commencement_date: z.string().optional(),
-    practical_completion_date: z.string().optional(),
-    defects_liability_period: z.string().optional(),
+  keyDates: z.object({
+    commencementDate: z.string().optional(),
+    practicalCompletionDate: z.string().optional(),
+    defectsLiabilityPeriod: z.string().optional(),
   }).optional(),
-  source_documents: z.array(z.string()).optional(),
-  html_content: z.string().optional(),
+  sourceDocuments: z.array(z.string()).optional(),
+  htmlContent: z.string().optional(),
   status: z.enum(['planning', 'active', 'on_hold', 'completed', 'archived']).optional(),
 });
 
 export const PROJECT_QUERIES = {
   getProject: `
-    MATCH (p:Project {project_id: $projectId})
+    MATCH (p:Project {projectId: $projectId})
     RETURN p as project
   `,
   getAllProjects: `
     MATCH (p:Project)
     RETURN p
-    ORDER BY p.project_name
+    ORDER BY p.projectName
   `,
   create: `
     CREATE (p:Project {
-      project_id: $project_id,
-      project_name: $project_name,
-      project_code: $project_code,
-      contract_number: $contract_number,
-      project_description: $project_description,
-      scope_summary: $scope_summary,
-      project_address: $project_address,
-      state_territory: $state_territory,
+      projectId: $projectId,
+      projectName: $projectName,
+      projectCode: $projectCode,
+      contractNumber: $contractNumber,
+      projectDescription: $projectDescription,
+      scopeSummary: $scopeSummary,
+      projectAddress: $projectAddress,
+      stateTerritory: $stateTerritory,
       jurisdiction: $jurisdiction,
-      jurisdiction_code: $jurisdiction_code,
-      local_council: $local_council,
-      contract_value: $contract_value,
-      procurement_method: $procurement_method,
-      regulatory_framework: $regulatory_framework,
-      applicable_standards: $applicable_standards,
+      jurisdictionCode: $jurisdictionCode,
+      localCouncil: $localCouncil,
+      contractValue: $contractValue,
+      procurementMethod: $procurementMethod,
+      regulatoryFramework: $regulatoryFramework,
+      applicableStandards: $applicableStandards,
       parties: $parties,
-      key_dates: $key_dates,
-      source_documents: $source_documents,
-      html_content: $html_content,
+      keyDates: $keyDates,
+      sourceDocuments: $sourceDocuments,
+      htmlContent: $htmlContent,
       status: $status,
-      created_at: datetime(),
-      updated_at: datetime()
+      createdAt: datetime(),
+      updatedAt: datetime()
     })
     RETURN p
   `,

@@ -113,7 +113,7 @@ Define appropriate location types for the hierarchy:
 - **site** - Overall project site
 - **zone** - Major construction zone or area
 - **area** - Specific work area within a zone
-- **work_location** - Detailed location where activities occur
+- **workLocation** - Detailed location where activities occur
 - **component** - Individual structural or building component
 
 ## Construction Location Identification
@@ -187,9 +187,9 @@ How mapping supports inspection and testing workflows:
 
 You are tasked with extracting a comprehensive LBS from project documentation:
 
-1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
    ```cypher
-   MATCH (p:Project) RETURN p.project_uuid
+   MATCH (p:Project) RETURN p.projectId
    ```
    This UUID must be included in ALL LBSNode entities you create.
 
@@ -240,15 +240,25 @@ Before finalizing the LBS:
 - Confirm spatial logic is sound and constructible
 - Verify source document references are accurate
 
+## Naming Convention
+
+**CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
+
+- NOT snake_case (project_id, doc_no)
+
+- NOT PascalCase (ProjectId, DocNo)
+
+- Use camelCase consistently throughout
+
 ## Output Format
 
 Your output must conform to the LBS Node schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Node labels and properties
+- Node labels and properties (use camelCase for all field names)
 - Required vs optional fields
 - Location type definitions
 - Relationship structure (parent-child via parentId)
-- WBS mapping format (applicable_wbs_package_ids)
+- WBS mapping format (applicableWbsPackageIds)
 - Cypher CREATE statement format
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
