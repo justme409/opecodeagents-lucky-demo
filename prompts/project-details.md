@@ -186,7 +186,7 @@ Do NOT include regulatory standards, codes, QA/QC requirements, acceptance crite
 Your output must conform to the Project schema. See the output schema file copied to your workspace for the exact structure.
 
 **CRITICAL FIELD NAMES** (use these EXACT names - the schema is the source of truth):
-- `project_uuid` - Use the UUID provided in the prompt (PRIMARY KEY)
+- `project_id` - Use the UUID provided in the prompt (PRIMARY KEY)
 - `project_name` - NOT "name" (REQUIRED)
 - `project_description` - NOT "description"
 - `project_address` - Location field

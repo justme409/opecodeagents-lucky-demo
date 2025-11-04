@@ -49,7 +49,7 @@ export interface EntityMetadata {
  * Reference data for construction area codes
  */
 export interface AreaCodeNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   description: string;
   metadata?: Record<string, any>;
@@ -76,10 +76,32 @@ export const AreaCodeMetadata: EntityMetadata = {
 };
 
 export const AreaCodeSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   description: z.string(),
 });
+
+export const AREA_CODE_QUERIES = {
+  getAll: `
+    MATCH (a:AreaCode {project_id: $projectId})
+    RETURN a
+    ORDER BY a.code
+  `,
+  getByCode: `
+    MATCH (a:AreaCode {project_id: $projectId, code: $code})
+    RETURN a
+  `,
+  create: `
+    CREATE (a:AreaCode {
+      project_id: $project_id,
+      code: $code,
+      description: $description,
+      createdAt: datetime(),
+      updatedAt: datetime()
+    })
+    RETURN a
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -88,7 +110,7 @@ export const AreaCodeSchema = z.object({
  * Document and drawing register with revisions
  */
 export interface DocumentNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   documentNumber: string;
   revisionCode: string;
   docKind: 'drawing' | 'document';
@@ -125,7 +147,7 @@ export const DocumentMetadata: EntityMetadata = {
 };
 
 export const DocumentSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   documentNumber: z.string(),
   revisionCode: z.string(),
   docKind: z.enum(['drawing', 'document']),
@@ -135,6 +157,35 @@ export const DocumentSchema = z.object({
   fileUrl: z.string().optional(),
 });
 
+export const DOCUMENT_QUERIES = {
+  getAll: `
+    MATCH (d:Document {project_id: $projectId})
+    RETURN d
+    ORDER BY d.documentNumber, d.revisionCode
+  `,
+  getByDocNumber: `
+    MATCH (d:Document {project_id: $projectId, documentNumber: $documentNumber})
+    RETURN d
+    ORDER BY d.revisionCode DESC
+  `,
+  create: `
+    CREATE (d:Document {
+      project_id: $project_id,
+      documentNumber: $documentNumber,
+      revisionCode: $revisionCode,
+      docKind: $docKind,
+      title: $title,
+      type: $type,
+      status: $status,
+      fileUrl: $fileUrl,
+      fileName: $fileName,
+      createdAt: datetime(),
+      updatedAt: datetime()
+    })
+    RETURN d
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -142,7 +193,7 @@ export const DocumentSchema = z.object({
  * Individual inspection/test points within ITPs
  */
 export interface InspectionPointNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   parentType: 'template' | 'instance';
   parentKey: string;
   sequence: number;
@@ -184,7 +235,7 @@ export const InspectionPointMetadata: EntityMetadata = {
 };
 
 export const InspectionPointSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   parentType: z.enum(['template', 'instance']),
   parentKey: z.string(),
   sequence: z.number(),
@@ -195,6 +246,36 @@ export const InspectionPointSchema = z.object({
   isWitnessPoint: z.boolean(),
 });
 
+export const INSPECTION_POINT_QUERIES = {
+  getAll: `
+    MATCH (ip:InspectionPoint {project_id: $projectId})
+    RETURN ip
+    ORDER BY ip.sequence
+  `,
+  getByParent: `
+    MATCH (ip:InspectionPoint {project_id: $projectId, parentType: $parentType, parentKey: $parentKey})
+    RETURN ip
+    ORDER BY ip.sequence
+  `,
+  create: `
+    CREATE (ip:InspectionPoint {
+      project_id: $project_id,
+      parentType: $parentType,
+      parentKey: $parentKey,
+      sequence: $sequence,
+      description: $description,
+      type: $type,
+      status: $status,
+      requirement: $requirement,
+      isHoldPoint: $isHoldPoint,
+      isWitnessPoint: $isWitnessPoint,
+      createdAt: datetime(),
+      updatedAt: datetime()
+    })
+    RETURN ip
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -202,7 +283,7 @@ export const InspectionPointSchema = z.object({
  * Lot-specific instance of an ITP template
  */
 export interface ITPInstanceNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   lotNumber: string;
   templateDocNo: string;
   status: 'pending' | 'in_progress' | 'completed' | 'approved';
@@ -236,11 +317,34 @@ export const ITPInstanceMetadata: EntityMetadata = {
 };
 
 export const ITPInstanceSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   lotNumber: z.string(),
   templateDocNo: z.string(),
   status: z.enum(['pending', 'in_progress', 'completed', 'approved']),
 });
+
+export const ITP_INSTANCE_QUERIES = {
+  getAll: `
+    MATCH (i:ITPInstance {project_id: $projectId})
+    RETURN i
+    ORDER BY i.lotNumber
+  `,
+  getByLot: `
+    MATCH (i:ITPInstance {project_id: $projectId, lotNumber: $lotNumber})
+    RETURN i
+  `,
+  create: `
+    CREATE (i:ITPInstance {
+      project_id: $project_id,
+      lotNumber: $lotNumber,
+      templateDocNo: $templateDocNo,
+      status: $status,
+      createdAt: datetime(),
+      updatedAt: datetime()
+    })
+    RETURN i
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -249,7 +353,7 @@ export const ITPInstanceSchema = z.object({
  * Global, reusable ITP template
  */
 export interface ITPTemplateNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   docNo: string;
   description: string;
   workType: string;
@@ -294,7 +398,7 @@ export const ITPTemplateMetadata: EntityMetadata = {
 };
 
 export const ITPTemplateSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   docNo: z.string(),
   description: z.string(),
   workType: z.string(),
@@ -305,6 +409,34 @@ export const ITPTemplateSchema = z.object({
   revisionNumber: z.string(),
 });
 
+export const ITP_TEMPLATE_QUERIES = {
+  getAll: `
+    MATCH (t:ITPTemplate {project_id: $projectId})
+    RETURN t
+    ORDER BY t.docNo
+  `,
+  getByDocNo: `
+    MATCH (t:ITPTemplate {project_id: $projectId, docNo: $docNo})
+    RETURN t
+  `,
+  create: `
+    CREATE (t:ITPTemplate {
+      project_id: $project_id,
+      docNo: $docNo,
+      description: $description,
+      workType: $workType,
+      specRef: $specRef,
+      status: $status,
+      approvalStatus: $approvalStatus,
+      revisionDate: $revisionDate,
+      revisionNumber: $revisionNumber,
+      createdAt: datetime(),
+      updatedAt: datetime()
+    })
+    RETURN t
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -312,7 +444,7 @@ export const ITPTemplateSchema = z.object({
  * Testing laboratory details
  */
 export interface LaboratoryNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   nataNumber?: string;
@@ -343,11 +475,23 @@ export const LaboratoryMetadata: EntityMetadata = {
 };
 
 export const LaboratorySchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   nataNumber: z.string().optional(),
 });
+
+export const LABORATORY_QUERIES = {
+  getAll: `
+    MATCH (l:Laboratory {project_id: $projectId})
+    RETURN l
+    ORDER BY l.name
+  `,
+  getByCode: `
+    MATCH (l:Laboratory {project_id: $projectId, code: $code})
+    RETURN l
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -356,7 +500,7 @@ export const LaboratorySchema = z.object({
  * Location Breakdown Structure node
  */
 export interface LBSNodeType {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   type: 'site' | 'zone' | 'chainage' | 'layer' | 'element' | 'building' | 'floor';
@@ -395,13 +539,25 @@ export const LBSNodeMetadata: EntityMetadata = {
 };
 
 export const LBSNodeSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   type: z.enum(['site', 'zone', 'chainage', 'layer', 'element', 'building', 'floor']),
   level: z.number(),
   parentCode: z.string().optional(),
 });
+
+export const LBS_NODE_QUERIES = {
+  getAll: `
+    MATCH (l:LBSNode {project_id: $projectId})
+    RETURN l
+    ORDER BY l.code
+  `,
+  getByCode: `
+    MATCH (l:LBSNode {project_id: $projectId, code: $code})
+    RETURN l
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -410,7 +566,7 @@ export const LBSNodeSchema = z.object({
  * Discrete work package for quality tracking
  */
 export interface LotNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   status: 'open' | 'in_progress' | 'conformed' | 'closed';
   percentComplete: number;
@@ -452,7 +608,7 @@ export const LotMetadata: EntityMetadata = {
 };
 
 export const LotSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   status: z.enum(['open', 'in_progress', 'conformed', 'closed']),
   percentComplete: z.number(),
@@ -464,6 +620,18 @@ export const LotSchema = z.object({
   startDate: z.coerce.date(),
 });
 
+export const LOT_QUERIES = {
+  getAll: `
+    MATCH (l:Lot {project_id: $projectId})
+    RETURN l
+    ORDER BY l.number
+  `,
+  getByNumber: `
+    MATCH (l:Lot {project_id: $projectId, number: $number})
+    RETURN l
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -471,7 +639,7 @@ export const LotSchema = z.object({
  * Project management plans (PQP, OHSMP, EMP, etc.)
  */
 export interface ManagementPlanNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   type: 'PQP' | 'OHSMP' | 'EMP' | 'CEMP' | 'TMP';
   title: string;
   version: string;
@@ -505,13 +673,26 @@ export const ManagementPlanMetadata: EntityMetadata = {
 };
 
 export const ManagementPlanSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   type: z.enum(['PQP', 'OHSMP', 'EMP', 'CEMP', 'TMP']),
   title: z.string(),
   version: z.string(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded']),
   htmlContent: z.string().optional(),
 });
+
+export const MANAGEMENT_PLAN_QUERIES = {
+  getAll: `
+    MATCH (m:ManagementPlan {project_id: $projectId})
+    RETURN m
+    ORDER BY m.type, m.version DESC
+  `,
+  getByType: `
+    MATCH (m:ManagementPlan {project_id: $projectId, type: $type})
+    RETURN m
+    ORDER BY m.version DESC
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -520,7 +701,7 @@ export const ManagementPlanSchema = z.object({
  * Construction materials with approvals
  */
 export interface MaterialNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   type: string;
@@ -557,7 +738,7 @@ export const MaterialMetadata: EntityMetadata = {
 };
 
 export const MaterialSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   type: z.string(),
@@ -566,6 +747,18 @@ export const MaterialSchema = z.object({
   approvalStatus: z.enum(['pending', 'approved', 'rejected']),
 });
 
+export const MATERIAL_QUERIES = {
+  getAll: `
+    MATCH (m:Material {project_id: $projectId})
+    RETURN m
+    ORDER BY m.code
+  `,
+  getByCode: `
+    MATCH (m:Material {project_id: $projectId, code: $code})
+    RETURN m
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -573,7 +766,7 @@ export const MaterialSchema = z.object({
  * Concrete or material mix designs
  */
 export interface MixDesignNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   materialCode: string;
@@ -613,7 +806,7 @@ export const MixDesignMetadata: EntityMetadata = {
 };
 
 export const MixDesignSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   materialCode: z.string(),
@@ -625,6 +818,18 @@ export const MixDesignSchema = z.object({
   status: z.enum(['draft', 'approved', 'rejected']),
 });
 
+export const MIX_DESIGN_QUERIES = {
+  getAll: `
+    MATCH (m:MixDesign {project_id: $projectId})
+    RETURN m
+    ORDER BY m.code
+  `,
+  getByCode: `
+    MATCH (m:MixDesign {project_id: $projectId, code: $code})
+    RETURN m
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -632,7 +837,7 @@ export const MixDesignSchema = z.object({
  * Quality issues and defects
  */
 export interface NCRNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   description: string;
   severity: 'minor' | 'major' | 'critical';
@@ -674,7 +879,7 @@ export const NCRMetadata: EntityMetadata = {
 };
 
 export const NCRSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   description: z.string(),
   severity: z.enum(['minor', 'major', 'critical']),
@@ -683,6 +888,18 @@ export const NCRSchema = z.object({
   raisedBy: z.string(),
 });
 
+export const NCR_QUERIES = {
+  getAll: `
+    MATCH (n:NCR {project_id: $projectId})
+    RETURN n
+    ORDER BY n.raisedDate DESC
+  `,
+  getByNumber: `
+    MATCH (n:NCR {project_id: $projectId, number: $number})
+    RETURN n
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -690,16 +907,32 @@ export const NCRSchema = z.object({
  * Root project node
  */
 export interface ProjectNode {
-  projectId: string;
-  name: string;
-  code?: string;
-  contractNumber?: string;
-  description?: string;
-  scopeSummary?: string;
-  address?: string;
+  project_id: string;  // PRIMARY KEY - matches Neo4j implementation
+  project_name: string;  // REQUIRED - Primary project name
+  project_code?: string;  // Internal project code
+  contract_number?: string;  // Contract identifier
+  project_description?: string;  // One-sentence overview
+  scope_summary?: string;  // Brief summary of work scope
+  project_address?: string;  // Physical site address
+  state_territory?: string;  // Australian state/territory
+  jurisdiction?: string;  // Governing jurisdiction
+  jurisdiction_code?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';  // UPPERCASE code
+  local_council?: string;  // Local authority/council name
+  contract_value?: string;  // Monetary value with currency
+  procurement_method?: string;  // Contract type (D&C, EPC, lump sum, etc.)
+  regulatory_framework?: string;  // Governing legislation
+  applicable_standards?: string[];  // Referenced standards and codes
+  parties?: string;  // JSON string with client, principal, parties_mentioned_in_docs
+  key_dates?: {
+    commencement_date?: string;
+    practical_completion_date?: string;
+    defects_liability_period?: string;
+  };
+  source_documents?: string[];  // Document IDs used for extraction
+  html_content?: string;  // Complete HTML string (NOT a file path)
   status?: 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export const ProjectMetadata: EntityMetadata = {
@@ -719,13 +952,70 @@ export const ProjectMetadata: EntityMetadata = {
 };
 
 export const ProjectSchema = z.object({
-  projectId: z.string(),
-  name: z.string(),
-  code: z.string().optional(),
-  contractNumber: z.string().optional(),
-  description: z.string().optional(),
+  project_id: z.string(),  // PRIMARY KEY
+  project_name: z.string(),
+  project_code: z.string().optional(),
+  contract_number: z.string().optional(),
+  project_description: z.string().optional(),
+  scope_summary: z.string().optional(),
+  project_address: z.string().optional(),
+  state_territory: z.string().optional(),
+  jurisdiction: z.string().optional(),
+  jurisdiction_code: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  local_council: z.string().optional(),
+  contract_value: z.string().optional(),
+  procurement_method: z.string().optional(),
+  regulatory_framework: z.string().optional(),
+  applicable_standards: z.array(z.string()).optional(),
+  parties: z.string().optional(),
+  key_dates: z.object({
+    commencement_date: z.string().optional(),
+    practical_completion_date: z.string().optional(),
+    defects_liability_period: z.string().optional(),
+  }).optional(),
+  source_documents: z.array(z.string()).optional(),
+  html_content: z.string().optional(),
   status: z.enum(['planning', 'active', 'on_hold', 'completed', 'archived']).optional(),
 });
+
+export const PROJECT_QUERIES = {
+  getProject: `
+    MATCH (p:Project {project_id: $projectId})
+    RETURN p as project
+  `,
+  getAllProjects: `
+    MATCH (p:Project)
+    RETURN p
+    ORDER BY p.project_name
+  `,
+  create: `
+    CREATE (p:Project {
+      project_id: $project_id,
+      project_name: $project_name,
+      project_code: $project_code,
+      contract_number: $contract_number,
+      project_description: $project_description,
+      scope_summary: $scope_summary,
+      project_address: $project_address,
+      state_territory: $state_territory,
+      jurisdiction: $jurisdiction,
+      jurisdiction_code: $jurisdiction_code,
+      local_council: $local_council,
+      contract_value: $contract_value,
+      procurement_method: $procurement_method,
+      regulatory_framework: $regulatory_framework,
+      applicable_standards: $applicable_standards,
+      parties: $parties,
+      key_dates: $key_dates,
+      source_documents: $source_documents,
+      html_content: $html_content,
+      status: $status,
+      created_at: datetime(),
+      updated_at: datetime()
+    })
+    RETURN p
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -734,7 +1024,7 @@ export const ProjectSchema = z.object({
  * Bill of Quantities item
  */
 export interface ScheduleItemNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   description: string;
   unit: string;
@@ -768,7 +1058,7 @@ export const ScheduleItemMetadata: EntityMetadata = {
 };
 
 export const ScheduleItemSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   description: z.string(),
   unit: z.string(),
@@ -778,6 +1068,18 @@ export const ScheduleItemSchema = z.object({
   workType: z.string().optional(),
 });
 
+export const SCHEDULE_ITEM_QUERIES = {
+  getAll: `
+    MATCH (s:ScheduleItem {project_id: $projectId})
+    RETURN s
+    ORDER BY s.number
+  `,
+  getByNumber: `
+    MATCH (s:ScheduleItem {project_id: $projectId, number: $number})
+    RETURN s
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -785,7 +1087,7 @@ export const ScheduleItemSchema = z.object({
  * Site photos and progress images
  */
 export interface PhotoNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   fileUrl: string;
   fileName?: string;
   fileSize?: number;
@@ -820,12 +1122,20 @@ export const PhotoMetadata: EntityMetadata = {
 };
 
 export const PhotoSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   fileUrl: z.string(),
   fileName: z.string().optional(),
   caption: z.string().optional(),
   takenDate: z.coerce.date().optional(),
 });
+
+export const PHOTO_QUERIES = {
+  getAll: `
+    MATCH (p:Photo {project_id: $projectId})
+    RETURN p
+    ORDER BY p.takenDate DESC
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -834,7 +1144,7 @@ export const PhotoSchema = z.object({
  * Progress payment claims
  */
 export interface ProgressClaimNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   claimDate: Date;
   periodStart: Date;
@@ -872,7 +1182,7 @@ export const ProgressClaimMetadata: EntityMetadata = {
 };
 
 export const ProgressClaimSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   claimDate: z.coerce.date(),
   periodStart: z.coerce.date(),
@@ -886,6 +1196,18 @@ export const ProgressClaimSchema = z.object({
   })),
 });
 
+export const PROGRESS_CLAIM_QUERIES = {
+  getAllClaims: `
+    MATCH (c:ProgressClaim {project_id: $projectId})
+    RETURN c
+    ORDER BY c.number DESC
+  `,
+  getByNumber: `
+    MATCH (c:ProgressClaim {project_id: $projectId, number: $number})
+    RETURN c
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -893,7 +1215,7 @@ export const ProgressClaimSchema = z.object({
  * Lot quantities linked to schedule items
  */
 export interface QuantityNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   lotNumber: string;
   scheduleItemNumber: string;
   quantity: number;
@@ -924,12 +1246,19 @@ export const QuantityMetadata: EntityMetadata = {
 };
 
 export const QuantitySchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   lotNumber: z.string(),
   scheduleItemNumber: z.string(),
   quantity: z.number(),
   unit: z.string(),
 });
+
+export const QUANTITY_QUERIES = {
+  getByLot: `
+    MATCH (q:Quantity {project_id: $projectId, lotNumber: $lotNumber})
+    RETURN q
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -938,7 +1267,7 @@ export const QuantitySchema = z.object({
  * Physical samples for testing
  */
 export interface SampleNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   type: string;
   lotNumber: string;
@@ -974,7 +1303,7 @@ export const SampleMetadata: EntityMetadata = {
 };
 
 export const SampleSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   type: z.string(),
   lotNumber: z.string(),
@@ -984,6 +1313,18 @@ export const SampleSchema = z.object({
   status: z.enum(['collected', 'in_transit', 'at_lab', 'tested', 'disposed']),
 });
 
+export const SAMPLE_QUERIES = {
+  getAll: `
+    MATCH (s:Sample {project_id: $projectId})
+    RETURN s
+    ORDER BY s.dateTaken DESC
+  `,
+  getByNumber: `
+    MATCH (s:Sample {project_id: $projectId, number: $number})
+    RETURN s
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -991,7 +1332,7 @@ export const SampleSchema = z.object({
  * Industry standards and specifications
  */
 export interface StandardNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   title: string;
   version?: string;
@@ -1023,12 +1364,20 @@ export const StandardMetadata: EntityMetadata = {
 };
 
 export const StandardSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   title: z.string(),
   version: z.string().optional(),
   authority: z.string().optional(),
 });
+
+export const STANDARD_QUERIES = {
+  getAll: `
+    MATCH (s:Standard {project_id: $projectId})
+    RETURN s
+    ORDER BY s.code
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1037,7 +1386,7 @@ export const StandardSchema = z.object({
  * Material and equipment suppliers
  */
 export interface SupplierNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   abn?: string;
@@ -1068,11 +1417,19 @@ export const SupplierMetadata: EntityMetadata = {
 };
 
 export const SupplierSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   contactEmail: z.string().optional(),
 });
+
+export const SUPPLIER_QUERIES = {
+  getAll: `
+    MATCH (s:Supplier {project_id: $projectId})
+    RETURN s
+    ORDER BY s.name
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1081,7 +1438,7 @@ export const SupplierSchema = z.object({
  * Laboratory test requests
  */
 export interface TestRequestNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   testType: string;
   status: 'requested' | 'in_progress' | 'completed' | 'approved' | 'failed';
@@ -1124,13 +1481,25 @@ export const TestRequestMetadata: EntityMetadata = {
 };
 
 export const TestRequestSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   testType: z.string(),
   status: z.enum(['requested', 'in_progress', 'completed', 'approved', 'failed']),
   requestedDate: z.coerce.date(),
   requestedBy: z.string(),
 });
+
+export const TEST_REQUEST_QUERIES = {
+  getAll: `
+    MATCH (t:TestRequest {project_id: $projectId})
+    RETURN t
+    ORDER BY t.requestedDate DESC
+  `,
+  getByNumber: `
+    MATCH (t:TestRequest {project_id: $projectId, number: $number})
+    RETURN t
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1139,7 +1508,7 @@ export const TestRequestSchema = z.object({
  * Standardized test methods
  */
 export interface TestMethodNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   standard: string;
@@ -1169,12 +1538,24 @@ export const TestMethodMetadata: EntityMetadata = {
 };
 
 export const TestMethodSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   standard: z.string(),
   procedure: z.string(),
 });
+
+export const TEST_METHOD_QUERIES = {
+  getAll: `
+    MATCH (t:TestMethod {project_id: $projectId})
+    RETURN t
+    ORDER BY t.code
+  `,
+  getByCode: `
+    MATCH (t:TestMethod {project_id: $projectId, code: $code})
+    RETURN t
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1224,6 +1605,18 @@ export const UserSchema = z.object({
   organizationId: z.string(),
 });
 
+export const USER_QUERIES = {
+  getAll: `
+    MATCH (u:User)
+    RETURN u
+    ORDER BY u.name
+  `,
+  getByEmail: `
+    MATCH (u:User {email: $email})
+    RETURN u
+  `,
+};
+
 // ----------------------------------------------------------------------------
 
 /**
@@ -1231,7 +1624,7 @@ export const UserSchema = z.object({
  * Contract variations
  */
 export interface VariationNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   number: string;
   description: string;
   status: 'proposed' | 'approved' | 'rejected' | 'implemented';
@@ -1263,13 +1656,25 @@ export const VariationMetadata: EntityMetadata = {
 };
 
 export const VariationSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   number: z.string(),
   description: z.string(),
   status: z.enum(['proposed', 'approved', 'rejected', 'implemented']),
   amount: z.number(),
   proposedDate: z.coerce.date(),
 });
+
+export const VARIATION_QUERIES = {
+  getAll: `
+    MATCH (v:Variation {project_id: $projectId})
+    RETURN v
+    ORDER BY v.number DESC
+  `,
+  getByNumber: `
+    MATCH (v:Variation {project_id: $projectId, number: $number})
+    RETURN v
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1278,7 +1683,7 @@ export const VariationSchema = z.object({
  * Work Breakdown Structure node
  */
 export interface WBSNodeType {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   name: string;
   level: number;
@@ -1319,13 +1724,25 @@ export const WBSNodeMetadata: EntityMetadata = {
 };
 
 export const WBSNodeSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   name: z.string(),
   level: z.number(),
   parentCode: z.string().optional(),
   status: z.enum(['not_started', 'in_progress', 'completed', 'on_hold']).optional(),
 });
+
+export const WBS_NODE_QUERIES = {
+  getAll: `
+    MATCH (w:WBSNode {project_id: $projectId})
+    RETURN w
+    ORDER BY w.code
+  `,
+  getByCode: `
+    MATCH (w:WBSNode {project_id: $projectId, code: $code})
+    RETURN w
+  `,
+};
 
 // ----------------------------------------------------------------------------
 
@@ -1334,7 +1751,7 @@ export const WBSNodeSchema = z.object({
  * Reference data for work types
  */
 export interface WorkTypeNode {
-  projectId: string;
+  project_id: string;  // Foreign key to Project
   code: string;
   description: string;
   metadata?: Record<string, any>;
@@ -1364,10 +1781,22 @@ export const WorkTypeMetadata: EntityMetadata = {
 };
 
 export const WorkTypeSchema = z.object({
-  projectId: z.string(),
+  project_id: z.string(),
   code: z.string(),
   description: z.string(),
 });
+
+export const WORK_TYPE_QUERIES = {
+  getAll: `
+    MATCH (w:WorkType {project_id: $projectId})
+    RETURN w
+    ORDER BY w.code
+  `,
+  getByCode: `
+    MATCH (w:WorkType {project_id: $projectId, code: $code})
+    RETURN w
+  `,
+};
 
 // ============================================================================
 // MASTER OUTPUT
@@ -1543,4 +1972,3 @@ export function getEntitiesByPage(pagePath: string): EntityType[] {
     return metadata.displayedOn.some(page => page === pagePath);
   });
 }
-
