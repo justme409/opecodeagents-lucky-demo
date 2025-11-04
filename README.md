@@ -1,76 +1,158 @@
 # OpenCode Agents - Construction Project Orchestrator
 
-AI-powered agent orchestration system for extracting and generating construction project documentation from Neo4j databases.
+AI-powered agent orchestration for extracting and generating construction project documentation from Neo4j databases.
 
 ## What This Does
 
-This system runs multiple AI agents in parallel to:
+Runs multiple AI agents in parallel to:
 - Extract project metadata, WBS, standards from documents
 - Generate management plans (ITP, EMP, OHSMP, PQP, QSE)
-- Process construction data and write to Neo4j databases
+- Process construction data and write to Neo4j
 
-Each agent works in its own workspace with access to 3 Neo4j databases:
-- **Standards DB** (read-only) - Reference specifications
-- **Project Docs DB** (read-only) - Project documents
-- **Generated DB** (write) - Output destination
+Each agent has access to 3 Neo4j databases:
+- **Standards DB** (port 7687) - Read-only reference specs
+- **Project Docs DB** (port 7688) - Read-only project documents
+- **Generated DB** (port 7690) - Write destination for results
 
 ---
 
 ## Quick Start
 
-### 1. Monitor the Stream (Recommended)
-
-**Start the stream monitor to see all agent activity in real-time:**
+### 1. Start Stream Monitor (Always Do This First!)
 
 ```bash
 cd /app/opecodeagents-lucky-demo
 python3 stream.py
 ```
 
-You'll see:
-```
-Connected to opencode server
+Shows real-time agent activity:
+- Bash commands
+- File operations
+- Neo4j queries
+- Errors
 
-Session: ses_abc123...
+### 2. Run a Task
 
-============================================================
-[BASH] $ cypher-shell -a bolt://localhost:7687 ...
-============================================================
-[OUTPUT]
-Connected to Neo4j
-Project: jervois_street
-------------------------------------------------------------
-
-[READ] connection details.md
-[WRITE] output.cypher
-```
-
-**Stream shows:**
-- Bash commands being executed (with `====` separators)
-- File operations (READ, WRITE, EDIT, LIST)
-- Tool outputs (with `----` separators)
-- Errors and status updates
-
-### 2. Run the Orchestrator
-
-**In a separate terminal:**
-
+**Single Task (Testing):**
 ```bash
-cd /app/opecodeagents-lucky-demo
+node run-single-task.js project-details
+```
+
+**All Tasks (Production):**
+```bash
 node orchestrate.js
 ```
 
-This launches 10 agents in parallel:
-1. project-details
-2. document-metadata
-3. standards-extraction
-4. wbs-extraction
-5. pqp-generation
-6. emp-generation
-7. ohsmp-generation
-8. qse-generation
-9. lbs-extraction (depends on wbs-extraction)
-10. itp-generation (depends on pqp, wbs, standards)
+**Dynamic ITP Generation (After PQP):**
+```bash
+node run-itp-generation.js
+```
+
+---
+
+## Available Tasks
+
+| Task | Description | Dependencies |
+|------|-------------|--------------|
+| `project-details` | Extract project metadata | None |
+| `document-metadata` | Extract document info | None |
+| `standards-extraction` | Extract standards/specs | None |
+| `wbs-extraction` | Extract Work Breakdown Structure | None |
+| `pqp-generation` | Generate Project Quality Plan | None |
+| `emp-generation` | Generate Environmental Plan | None |
+| `ohsmp-generation` | Generate OH&S Plan | None |
+| `qse-generation` | Generate QSE Plan | None |
+| `lbs-extraction` | Extract Location Breakdown | `wbs-extraction` |
+| `itp-generation` | Generate Inspection Test Plans | `pqp-generation` |
+
+---
+
+## How It Works
+
+### Execution Flow
+
+1. **Spawn workspace** - Creates isolated directory with task prompt and schemas
+2. **Create session** - POST to opencode server
+3. **Start monitoring** - Subscribe to `/event` stream BEFORE sending prompt
+4. **Send prompt** - POST returns immediately, agent runs async
+5. **Track progress** - Event stream provides real-time updates
+6. **Detect completion** - `session.idle` event signals done
+7. **Save logs** - Full event log saved to `workspace/session-log.json`
+
+### Event Stream Architecture (No Polling!)
+
+All orchestration scripts use Server-Sent Events for instant completion detection:
+
+```javascript
+// From lib/monitor.js
+function monitorSession(sessionId, workspacePath) {
+  return new Promise((resolve, reject) => {
+    // Subscribe to /event stream
+    http.get('/event', (res) => {
+      res.on('data', (chunk) => {
+        const event = parseSSE(chunk);
+        
+        // Check for completion
+        if (event.type === 'session.idle' && 
+            event.properties.sessionID === sessionId) {
+          // Save logs and resolve
+          fs.writeFileSync('session-log.json', JSON.stringify(logs));
+          resolve({ success: true, duration, stats });
+        }
+      });
+    });
+  });
+}
+```
+
+**Key Benefits:**
+- ✅ **Instant completion detection** - No 2-second polling delay
+- ✅ **Real-time progress tracking** - Tool counts, bash commands, file ops
+- ✅ **Full event logs** - Every event captured to `session-log.json`
+- ✅ **Parallel efficiency** - Each session monitors independently
+- ✅ **Error detection** - `session.error` events caught immediately
+
+**Event Types Monitored:**
+- `session.idle` - Task completed successfully
+- `session.error` - Task failed with error
+- `message.part.updated` - Progress updates (tools, reasoning, text)
+- All events logged for debugging
+
+---
+
+## Architecture
+
+### Parallel Execution
+
+```
+Wave 1 (8 tasks) ──────────────→ 50s
+  ├─ project-details
+  ├─ document-metadata
+  ├─ standards-extraction
+  ├─ wbs-extraction
+  ├─ pqp-generation
+  ├─ emp-generation
+  ├─ ohsmp-generation
+  └─ qse-generation
+
+Wave 2 (1 task) ───────→ 70s
+  └─ lbs-extraction (waits for wbs)
+
+Wave 3 (1 task) ───────→ 95s
+  └─ itp-generation (waits for pqp)
+
+Total: 95s (vs 425s sequential)
+```
+
+### Dynamic ITP Generation
+
+The `itp-generation` task is special:
+1. Queries Generated DB for ITPTemplate nodes
+2. Spawns one agent per ITP found
+3. All ITP agents run in parallel
+4. Each generates InspectionPoint nodes
+
+Example: 5 ITPs → 5 parallel agents → 120s total
 
 ---
 
@@ -78,248 +160,271 @@ This launches 10 agents in parallel:
 
 ```
 opecodeagents-lucky-demo/
-├── orchestrate.js           # Main orchestrator (runs all agents)
-├── spawn-agent.sh           # Creates agent workspace + files
-├── stream.py                # Real-time event monitor
-├── stream-debug.py          # Debug version (shows all events)
-├── extract-master-schema.js # Extracts schema for each agent
-├── extract-agent-schema.js  # Extracts agent-specific schema
-├── prompts/                 # Agent task prompts
-│   ├── project-details.md
-│   ├── document-metadata.md
-│   ├── wbs-extraction.md
-│   ├── lbs-extraction.md
-│   ├── standards-extraction.md
-│   ├── pqp-generation.md
-│   ├── emp-generation.md
-│   ├── ohsmp-generation.md
-│   ├── qse-generation.md
-│   └── itp-generation.md
-├── schemas/neo4j/           # Database schemas
-│   ├── master-schema.ts     # Complete schema (26 entities)
-│   └── agent-manifest.ts    # Agent-to-entity mapping
-└── shared/                  # Shared across all agents
-    ├── connection details.md
-    ├── instructions.md
-    ├── Exploration guide.md
-    ├── neo4j reference docs schema.md
-    └── neo4j standards schema.md
+├── run-single-task.js      # Run one task
+├── orchestrate.js          # Run all tasks
+├── run-itp-generation.js   # Dynamic ITP agents
+├── spawn-agent.sh          # Create workspace
+├── stream.py               # Event monitor
+├── prompts/                # Task instructions
+├── schemas/neo4j/          # Database schemas
+└── shared/                 # Connection details, guides
 ```
 
----
-
-## How It Works
-
-### Agent Workflow
-
-1. **Spawn Workspace**: `spawn-agent.sh <task-name>` creates:
-   ```
-   /app/opencode-workspace/agent-sessions/<timestamp-id>/
-   ├── prompt.md              # Task instructions
-   ├── session-info.txt       # Session metadata
-   ├── MASTER_SCHEMA.md       # Full Neo4j schema
-   ├── AGENT_SCHEMA.md        # Agent-specific entities
-   ├── README.md              # Quick reference
-   └── shared/                # Symlinked shared resources
-   ```
-
-2. **Create Session**: Orchestrator creates an opencode session
-
-3. **Send Prompt**: Sends `cd <workspace> && cat prompt.md` to agent
-
-4. **Agent Executes**: Agent reads files, connects to Neo4j, processes data
-
-5. **Poll for Completion**: Orchestrator polls until agent finishes
-
-### OpenCode Server
-
-The orchestrator communicates with the opencode server (running on port 4096):
-- **POST** `/session` - Create new session
-- **POST** `/session/{id}/message` - Send prompt to agent
-- **GET** `/session/{id}/message` - Check completion status
-- **GET** `/event` - Stream all events (SSE)
-
----
-
-## Stream Monitor Usage
-
-### Basic Usage
-```bash
-python3 stream.py
+Each agent workspace contains:
 ```
-
-### Run in Background
-```bash
-python3 stream.py > stream.log 2>&1 &
-```
-
-### Filter Specific Events
-```bash
-python3 stream.py | grep -E '\[BASH\]|\[ERROR\]'
-```
-
-### Debug Mode (Shows All Events)
-```bash
-python3 stream-debug.py
-```
-
-### What You'll See
-
-**Bash Commands:**
-```
-============================================================
-[BASH] $ cypher-shell -a bolt://localhost:7687 -u neo4j -p password
-============================================================
-[OUTPUT]
-Connected to Neo4j
-------------------------------------------------------------
-```
-
-**File Operations:**
-```
-[READ] connection details.md
-[WRITE] output.cypher
-[EDIT] script.js
-[LIST] /workspace
-```
-
-**Errors:**
-```
-Error: The client is unauthorized due to authentication failure
+/app/opencode-workspace/agent-sessions/<timestamp>/
+├── prompt.md           # Task instructions
+├── MASTER_SCHEMA.md    # Full Neo4j schema
+├── AGENT_SCHEMA.md     # Agent-specific entities
+└── shared/             # Symlinked resources
 ```
 
 ---
 
 ## Troubleshooting
 
-### Stream Not Showing Commands
+### Neo4j Connection Issues
 
-If you only see output but no bash commands:
-- The AI might be outputting text instead of calling tools
-- Check that prompts explicitly request tool usage
-- Verify agent is set to "build" (has all tools enabled)
+```bash
+# Test connections
+cypher-shell -a neo4j://localhost:7687 -u neo4j -p 5b01beec33ac195e1e75acb6d90b4944
+cypher-shell -a neo4j://localhost:7688 -u neo4j -p 27184236e197d5f4c36c60f453ebafd9
+cypher-shell -a neo4j://localhost:7690 -u neo4j -p 27184236e197d5f4c36c60f453ebafd9
+```
+
+Credentials are in `shared/connection details.md`
 
 ### "Grammar is too complex" Error
 
-The schema files are too large for the AI model:
-- Simplify `MASTER_SCHEMA.md` and `AGENT_SCHEMA.md`
-- Remove unnecessary examples and fields
-- Break complex schemas into smaller parts
+Schema files are too large. Simplify:
+- `MASTER_SCHEMA.md`
+- `AGENT_SCHEMA.md`
 
-### Neo4j Authentication Failures
+Remove examples and unnecessary fields.
+
+### Task Hangs or Fails
+
+1. Check `stream.py` output for errors
+2. Verify opencode server: `curl http://127.0.0.1:4096/event`
+3. Check workspace files in `/app/opencode-workspace/agent-sessions/`
+4. Review Neo4j connections
+
+### Stream Shows No Commands
+
+- Agent might be outputting text instead of using tools
+- Check prompt encourages tool usage
+- Verify agent is set to "build" (has all tools)
+
+---
+
+## Verification
+
+### Check Results in Neo4j
 
 ```bash
-# Test connection manually:
-cypher-shell -a bolt://localhost:7687 -u neo4j -p your_password
-
-# Verify databases exist:
-SHOW DATABASES;
+cypher-shell -a neo4j://localhost:7690 -u neo4j -p 27184236e197d5f4c36c60f453ebafd9
 ```
 
-Check credentials in `shared/connection details.md`
+```cypher
+-- Count all nodes by type
+MATCH (n) RETURN labels(n)[0] as type, count(n) as count ORDER BY type;
 
-### Orchestrator Hangs
+-- View project
+MATCH (p:Project) RETURN p;
 
-- Check stream output for errors
-- Verify opencode server is running: `curl http://127.0.0.1:4096/event`
-- Check agent workspace was created properly
-- Look for permission errors in stream
+-- View ITP templates
+MATCH (itp:ITPTemplate) RETURN itp.docNo, itp.description;
 
----
-
-## Key Files Explained
-
-### `orchestrate.js`
-Main orchestrator that:
-- Defines task dependencies
-- Spawns workspaces for each agent
-- Creates sessions and sends prompts
-- Polls for completion
-- Manages parallel execution
-
-### `spawn-agent.sh`
-Creates agent workspace with:
-- Task-specific prompt
-- Relevant schema files
-- Shared resources (symlinked)
-- Session metadata
-
-### `stream.py`
-Real-time event monitor showing:
-- Bash commands with visual separators
-- File operations (read/write/edit/list)
-- Tool outputs
-- Errors and status updates
-
-### `extract-master-schema.js`
-Generates `MASTER_SCHEMA.md` from `master-schema.ts`:
-- All 26 entity types
-- Properties, relationships, business keys
-- Agent and page metadata
-
-### `extract-agent-schema.js`
-Generates `AGENT_SCHEMA.md` for specific agent:
-- Only entities the agent creates/uses
-- Filtered from master schema
-- Smaller, focused schema
+-- View inspection points per ITP
+MATCH (itp:ITPTemplate)-[:HAS_POINT]->(point:InspectionPoint)
+RETURN itp.docNo, count(point) AS points;
+```
 
 ---
 
-## Neo4j Schema
+## Key Improvements
 
-The system uses a master schema with 26 entity types:
+### 1. Event Stream Monitoring (lib/monitor.js)
 
-**Quality & Compliance:**
-- Lot, ITP, InspectionPoint, NCR, Test, Material
+**Shared monitoring library** used by all orchestration scripts:
 
-**Project Structure:**
-- WBS, LBS, WorkType, AreaCode
+```javascript
+const { monitorSession } = require('./lib/monitor');
 
-**Documents:**
-- Document, Photo, ManagementPlan
+// Usage in any script
+const result = await monitorSession(sessionId, workspacePath, {
+  serverUrl: 'http://127.0.0.1:4096',
+  onProgress: (progress) => {
+    // Optional progress callbacks
+    if (progress.type === 'bash') {
+      console.log(`Bash commands: ${progress.count}`);
+    }
+  }
+});
 
-**Progress & Payment:**
-- ScheduleItem, ProgressClaim, Variation, Quantity
+// Returns: { success, duration, stats, logPath }
+// stats: { toolCount, bashCount, fileOps }
+```
 
-**Reference Data:**
-- Standard, Supplier, Laboratory
+**Benefits:**
+- Consistent completion detection across all scripts
+- Real-time progress tracking
+- Full event log capture
+- Parallel execution support
 
-**Infrastructure:**
-- Project, User
+### 2. Stream.py Improvements
 
-Each entity has:
-- Business key (no UUIDs)
-- Properties with types
-- Incoming/outgoing relationships
-- Agent metadata (which agent creates it)
-- Page metadata (where it's displayed)
+**Zero-buffering event display:**
+
+```python
+# Uses http.client instead of requests
+# Reads byte-by-byte for instant delivery
+conn = http.client.HTTPConnection(host, port)
+response = conn.getresponse()
+chunk = response.read(1)  # Instant!
+```
+
+**Shows model thinking:**
+
+```
+============================================================
+[REASONING]
+============================================================
+The project requires extracting metadata from documents...
+```
+
+**Benefits:**
+- Instant event display (no lag)
+- Shows LLM reasoning process
+- Clear formatting for tool calls
+- Real-time debugging
+
+### 3. Orchestration Scripts Updated
+
+**All scripts now use event stream:**
+
+| Script | Old Method | New Method | Improvement |
+|--------|-----------|------------|-------------|
+| `run-single-task.js` | ✅ Event stream | ✅ Event stream | Already updated |
+| `orchestrate.js` | ❌ HTTP polling | ✅ Event stream | **Instant completion** |
+| `run-itp-generation.js` | ❌ HTTP polling | ✅ Event stream | **Parallel efficiency** |
+
+**Old (Polling):**
+```javascript
+// Poll every 2 seconds
+while (true) {
+  await sleep(2000);
+  const messages = await get('/session/{id}/message');
+  if (messages[last].completed) break;
+}
+```
+
+**New (Event Stream):**
+```javascript
+// Instant notification
+const result = await monitorSession(sessionId, workspacePath);
+// Resolves immediately when session.idle received
+```
+
+### 4. Progress Visibility
+
+**High-level status updates:**
+
+```
+[12:10:05] Starting: project-details
+[12:10:05]   Workspace: 20251104-121005-abc123
+[12:10:05]   Session: ses_xyz789
+[12:10:05]   Prompt sent, agent executing...
+[12:10:07]   Running bash commands (5 total)
+[12:10:12]   File operations (3 total)
+[12:10:15]   Agent thinking...
+[12:10:18]   Deep reasoning...
+[12:12:18]   ✓ Completed: project-details (133s)
+[12:12:18]     Tools: 45, Bash: 20, Files: 8
+```
+
+### 5. Log Capture
+
+**Every session saves full event log:**
+
+```
+workspace/
+├── session-log.json    ← Full event stream (1000+ events)
+├── prompt.md
+├── README.md
+└── shared/
+```
+
+**Use for debugging:**
+```bash
+# Count events
+jq 'length' session-log.json
+
+# Find errors
+jq '.[] | select(.type == "session.error")' session-log.json
+
+# Count tool usage
+jq '[.[] | select(.type == "message.part.updated") | 
+    select(.event.properties.part.type == "tool")] | length' session-log.json
+```
 
 ---
 
 ## Requirements
 
-- **Node.js** - For orchestrator
-- **Python 3** - For stream monitor
-- **OpenCode Server** - Running on port 4096
-- **Neo4j** - 3 databases on ports 7687, 7688, 7689
+- **Node.js** - Orchestrator
+- **Python 3** - Stream monitor
+- **OpenCode Server** - Port 4096
+- **Neo4j** - 3 databases (ports 7687, 7688, 7690)
 
 ---
 
 ## Tips
 
-1. **Always run the stream monitor** - It shows you exactly what's happening
-2. **Test one agent first** - Before running the full orchestrator
+1. **Always run stream.py first** - See exactly what's happening
+2. **Test single task first** - Before running full orchestrator
 3. **Check Neo4j connections** - Most failures are auth issues
-4. **Simplify schemas** - If you get "grammar too complex" errors
-5. **Use debug mode** - `stream-debug.py` shows raw events for troubleshooting
+4. **Keep schemas simple** - Avoid "grammar too complex" errors
+5. **Use event stream** - Don't poll for completion
+
+---
+
+## Example Session
+
+**Terminal 1:**
+```bash
+cd /app/opecodeagents-lucky-demo
+python3 stream.py
+```
+
+**Terminal 2:**
+```bash
+cd /app/opecodeagents-lucky-demo
+node run-single-task.js project-details
+```
+
+**Output:**
+```
+[12:10:05 AM] Step 1: Spawning workspace...
+[12:10:05 AM]   ✓ Workspace created
+[12:10:05 AM] Step 2: Creating opencode session...
+[12:10:05 AM]   ✓ Session created: ses_abc123
+[12:10:05 AM] Step 3: Subscribing to event stream...
+[12:10:05 AM]   ✓ Listening for session.idle event
+[12:10:05 AM] Step 4: Sending prompt to agent...
+[12:10:05 AM]   ✓ Prompt sent
+[12:10:05 AM]   ✓ Agent is now executing...
+[12:10:05 AM] Step 5: Waiting for completion...
+[12:12:18 AM]   ✓ Task completed in 133s
+SUCCESS!
+```
 
 ---
 
 ## Support
 
-For issues or questions, check:
-- Stream output for real-time errors
-- Agent workspace files in `/app/opencode-workspace/agent-sessions/`
-- OpenCode server logs
-- Neo4j connection status
-
+For issues:
+- Check stream.py output
+- Review workspace files in `/app/opencode-workspace/agent-sessions/`
+- Test Neo4j connections
+- Verify opencode server is running

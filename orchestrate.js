@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 /**
- * OpenCode Agent Orchestrator - Ultra Simple
- * Just spawns workspaces and sends "read instructions.md" - that's it!
+ * OpenCode Agent Orchestrator
+ * 
+ * Orchestrates multiple agent tasks with dependency management.
+ * Uses event stream monitoring for instant completion detection.
  */
 
 const http = require('http');
 const { spawn } = require('child_process');
+const { monitorSession } = require('./lib/monitor');
 
 const CONFIG = {
   SERVER_URL: 'http://127.0.0.1:4096',
   WORKSPACE_BASE: '/app/opencode-workspace/agent-sessions',
   SPAWNER: '/app/opecodeagents-lucky-demo/spawn-agent.sh',
   MAX_PARALLEL: 5,
-  POLL_INTERVAL: 2000,
+  MODEL: {
+    providerID: 'opencode',
+    modelID: 'grok-code'
+  }
 };
 
 // Task definitions with dependencies
@@ -84,45 +90,76 @@ async function spawnWorkspace(taskName) {
 async function executeTask(taskName) {
   log(`Starting: ${taskName}`, 'cyan');
   
-  // 1. Spawn workspace (creates all files)
-  const { sessionId, workspacePath } = await spawnWorkspace(taskName);
-  log(`  Workspace: ${sessionId}`, 'blue');
-  
-  // 2. Create session (no directory param needed - cd in prompt handles it)
-  const session = await request(`${CONFIG.SERVER_URL}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: `Agent: ${taskName}` }),
-  });
-  
-  log(`  Session: ${session.id}`, 'blue');
-  
-  // 3. Send prompt with cd command (NO directory in message URL!)
-  const prompt = `cd ${workspacePath} && cat prompt.md and follow those instructions`;
-  
-  await request(`${CONFIG.SERVER_URL}/session/${session.id}/message`, {  // NO directory param!
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      parts: [{ type: 'text', text: prompt }],
-      model: { providerID: 'opencode', modelID: 'grok-code' },
-      agent: 'build',
-    }),
-  });
-  
-  log(`  Prompt sent`, 'blue');
-  
-  // 4. Poll for completion
-  while (true) {
-    await new Promise(resolve => setTimeout(resolve, CONFIG.POLL_INTERVAL));
+  try {
+    // 1. Spawn workspace (creates all files)
+    const { sessionId, workspacePath } = await spawnWorkspace(taskName);
+    log(`  Workspace: ${sessionId}`, 'blue');
     
-    const messages = await request(`${CONFIG.SERVER_URL}/session/${session.id}/message`);  // NO directory!
-    const lastMessage = messages[messages.length - 1];
+    // 2. Create session
+    const session = await request(`${CONFIG.SERVER_URL}/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: `Agent: ${taskName}` }),
+    });
     
-    if (lastMessage && lastMessage.info.role === 'assistant' && lastMessage.info.time.completed) {
-      log(`  ✓ Completed: ${taskName}`, 'green');
-      return { success: true, sessionId: session.id, workspacePath };
-    }
+    log(`  Session: ${session.id}`, 'blue');
+    
+    // 3. Start monitoring BEFORE sending prompt
+    let lastProgress = '';
+    const monitorPromise = monitorSession(session.id, workspacePath, {
+      serverUrl: CONFIG.SERVER_URL,
+      onProgress: (progress) => {
+        // Show high-level progress updates
+        let msg = '';
+        if (progress.type === 'bash') {
+          msg = `  Running bash commands (${progress.count} total)`;
+        } else if (progress.type === 'file') {
+          msg = `  File operations (${progress.count} total)`;
+        } else if (progress.type === 'thinking') {
+          msg = `  Agent thinking...`;
+        } else if (progress.type === 'reasoning') {
+          msg = `  Deep reasoning...`;
+        }
+        
+        if (msg && msg !== lastProgress) {
+          log(msg, 'blue');
+          lastProgress = msg;
+        }
+      }
+    });
+    
+    // 4. Send prompt
+    const prompt = `cd ${workspacePath} && cat prompt.md and follow those instructions`;
+    
+    await request(`${CONFIG.SERVER_URL}/session/${session.id}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parts: [{ type: 'text', text: prompt }],
+        model: CONFIG.MODEL,
+        agent: 'build',
+      }),
+    });
+    
+    log(`  Prompt sent, agent executing...`, 'blue');
+    
+    // 5. Wait for completion via event stream
+    const result = await monitorPromise;
+    
+    log(`  ✓ Completed: ${taskName} (${result.duration}s)`, 'green');
+    log(`    Tools: ${result.stats.toolCount}, Bash: ${result.stats.bashCount}, Files: ${result.stats.fileOps}`, 'blue');
+    
+    return { 
+      success: true, 
+      sessionId: session.id, 
+      workspacePath,
+      duration: result.duration,
+      stats: result.stats
+    };
+    
+  } catch (error) {
+    log(`  ✗ Failed: ${taskName} - ${error.message}`, 'red');
+    throw error;
   }
 }
 
@@ -211,15 +248,35 @@ class Orchestrator {
     log(`Failed: ${failed}`, failed > 0 ? 'red' : 'green');
     log('');
     
+    // Calculate total stats
+    let totalTools = 0;
+    let totalBash = 0;
+    let totalFiles = 0;
+    
     Object.entries(this.states).forEach(([name, state]) => {
       const symbol = state === 'completed' ? '✓' : state === 'failed' ? '✗' : '⋯';
       const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : 'yellow';
-      log(`  ${symbol} ${name}: ${state}`, color);
+      const result = this.results[name];
       
-      if (this.results[name]?.error) {
-        log(`    Error: ${this.results[name].error}`, 'red');
+      if (state === 'completed' && result?.stats) {
+        totalTools += result.stats.toolCount || 0;
+        totalBash += result.stats.bashCount || 0;
+        totalFiles += result.stats.fileOps || 0;
+        log(`  ${symbol} ${name} (${result.duration}s) - Tools: ${result.stats.toolCount}, Bash: ${result.stats.bashCount}, Files: ${result.stats.fileOps}`, color);
+      } else {
+        log(`  ${symbol} ${name}: ${state}`, color);
+      }
+      
+      if (result?.error) {
+        log(`    Error: ${result.error}`, 'red');
       }
     });
+    
+    if (completed > 0) {
+      log(`\nTotal Stats:`, 'cyan');
+      log(`  Tools: ${totalTools}, Bash: ${totalBash}, Files: ${totalFiles}`, 'blue');
+      log(`  Event logs saved to each workspace/session-log.json`, 'blue');
+    }
     
     process.exit(failed > 0 ? 1 : 0);
   }

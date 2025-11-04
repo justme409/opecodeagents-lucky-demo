@@ -202,17 +202,23 @@ For each standard extracted, provide:
 
 You are tasked with extracting all standards references from project documentation:
 
-1. **Query the Project Docs Database** (port 7688) to access:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in ALL Standard entities you create.
+
+2. **Query the Project Docs Database** (port 7688) to access:
    - All project documents
    - Full document text
    - Document metadata
 
-2. **Query the Standards Database** (port 7687) to access:
+3. **Query the Standards Database** (port 7687) to access:
    - Available standards by jurisdiction
    - Standard metadata
    - Standard versions
 
-3. **Extract standard references** by:
+4. **Extract standard references** by:
    - Scanning document text for standard codes
    - Identifying context and section references
    - Recording document locations

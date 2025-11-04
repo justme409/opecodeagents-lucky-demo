@@ -238,7 +238,7 @@ $WORKSPACE_DIR/
     ├── connection details.md
     ├── Exploration guide.md
     ├── neo4j standards schema.md
-    └── neo4j reference docs schema.md
+    └── neo4j project docs schema.md
 \`\`\`
 
 ## Output Requirements

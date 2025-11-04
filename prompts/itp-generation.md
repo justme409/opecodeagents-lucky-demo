@@ -80,16 +80,26 @@ ITPs typically include these sections (where relevant):
 
 You are tasked with generating a detailed ITP based on the project specification documents available in the Neo4j databases. Your process should be:
 
-1. Query the **Standards Database** (port 7687) to understand applicable standards for the jurisdiction and work type
-2. Query the **Project Docs Database** (port 7688) to extract:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in ALL entities you create.
+
+2. Query the **Standards Database** (port 7687) to understand applicable standards for the jurisdiction and work type
+
+3. Query the **Project Docs Database** (port 7688) to extract:
    - Specification requirements for the work type
    - Hold and witness points
    - Acceptance criteria
    - Test methods and frequencies
    - Quality requirements
-3. Structure the ITP according to the output schema requirements
-4. Generate all inspection points with complete details
-5. Write the output to the **Generated Database** (port 7690)
+
+4. Structure the ITP according to the output schema requirements
+
+5. Generate all inspection points with complete details
+
+6. Write the output to the **Generated Database** (port 7690) - **CRITICAL**: All entities MUST include `project_uuid`
 
 ## Standards Matching Process
 

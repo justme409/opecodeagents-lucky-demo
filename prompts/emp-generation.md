@@ -268,7 +268,13 @@ Provide matrices/tables including:
 
 You are tasked with generating a comprehensive EMP based on project documentation:
 
-1. **Query the Project Docs Database** (port 7688) to access:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in the ManagementPlan entity you create.
+
+2. **Query the Project Docs Database** (port 7688) to access:
    - Environmental assessment reports
    - Contract environmental requirements
    - Site environmental constraints

@@ -247,12 +247,18 @@ When discipline is not explicitly stated, infer from:
 
 You are tasked with extracting document metadata from project files:
 
-1. **Query the Project Docs Database** (port 7688) to access:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in ALL Document entities you create.
+
+2. **Query the Project Docs Database** (port 7688) to access:
    - Document files and content
    - Filenames
    - Existing partial metadata
 
-2. **Analyze each document** to determine:
+3. **Analyze each document** to determine:
    - Whether it's a drawing or non-drawing document
    - Extract all available metadata fields
    - Infer missing fields where evidence exists

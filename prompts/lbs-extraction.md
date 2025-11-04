@@ -187,7 +187,13 @@ How mapping supports inspection and testing workflows:
 
 You are tasked with extracting a comprehensive LBS from project documentation:
 
-1. **Query the Project Docs Database** (port 7688) to access:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in ALL LBSNode entities you create.
+
+2. **Query the Project Docs Database** (port 7688) to access:
    - Site plans and drawings
    - Structural and architectural layouts
    - Scope of works documents

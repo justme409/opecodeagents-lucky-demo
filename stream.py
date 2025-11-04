@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 Simple script to stream and display events from the opencode server.
+Uses raw HTTP streaming for instant event delivery (no buffering).
 """
 
-import requests
 import json
 import sys
+import http.client
+from urllib.parse import urlparse
 
 BASE_URL = "http://127.0.0.1:4096"
 
@@ -41,11 +43,25 @@ def format_event(event_data):
             part_type = part.get("type", "unknown")
             delta = properties.get("delta", "")
             
-            if part_type == "text" and delta:
-                return delta
+            if part_type == "text":
+                # Show LLM text responses (final summaries/responses)
+                if delta:
+                    return delta
+                return ""
             
             elif part_type == "reasoning":
-                return ""  # Suppress
+                # Show reasoning/thinking (this is where the model's actual thinking happens)
+                text = part.get("text", "")
+                
+                # Show header when reasoning first starts (no prior text)
+                if text and not delta and len(text) < 50:
+                    return f"\n{'='*60}\n[REASONING]\n{'='*60}\n"
+                
+                # Show the reasoning deltas (the actual thinking)
+                if delta:
+                    return delta
+                
+                return ""
             
             elif part_type == "tool":
                 tool_name = part.get("tool", "unknown")
@@ -193,34 +209,53 @@ def main():
     print("-" * 60)
     
     try:
-        # Connect to the event stream with timeout disabled
-        response = requests.get(
-            f"{BASE_URL}/event",
-            stream=True,
-            headers={
-                "Accept": "text/event-stream",
-                "Cache-Control": "no-cache"
-            },
-            timeout=None  # No timeout for streaming
-        )
-        response.raise_for_status()
+        # Parse URL
+        parsed = urlparse(BASE_URL)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 4096
         
-        # Process the stream line by line
-        # Use iter_lines with chunk_size=1 to get events immediately
-        for line in response.iter_lines(decode_unicode=True, chunk_size=1):
-            if line:  # Only process non-empty lines
-                # Parse SSE format
-                data = parse_sse_event(line)
-                if data:
-                    # Format and print the event
-                    formatted = format_event(data)
-                    if formatted:  # Only print if there's content
-                        print(formatted, end='', flush=True)
+        # Use raw HTTP connection for instant streaming (no buffering)
+        conn = http.client.HTTPConnection(host, port)
+        conn.request("GET", "/event", headers={
+            "Accept": "text/event-stream",
+            "Cache-Control": "no-cache"
+        })
+        
+        response = conn.getresponse()
+        if response.status != 200:
+            print(f"Error: Server returned status {response.status}")
+            exit(1)
+        
+        # Read byte-by-byte until we hit newline, then process
+        # This matches the Node.js behavior exactly
+        buffer = ""
+        while True:
+            # Read one byte at a time for instant delivery
+            chunk = response.read(1)
+            if not chunk:
+                break
+            
+            char = chunk.decode('utf-8', errors='ignore')
+            buffer += char
+            
+            # Process complete lines
+            if char == '\n':
+                line = buffer.strip()
+                buffer = ""
+                
+                if line:  # Only process non-empty lines
+                    # Parse SSE format
+                    data = parse_sse_event(line)
+                    if data:
+                        # Format and print the event
+                        formatted = format_event(data)
+                        if formatted:  # Only print if there's content
+                            print(formatted, end='', flush=True)
     
     except KeyboardInterrupt:
         print("\n" + "-" * 60)
         print("Stream stopped by user")
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"Error connecting to server: {e}")
         exit(1)
 

@@ -250,12 +250,18 @@ Use consistent:
 
 You are tasked with generating QSE system content:
 
-1. **Understand company profile** by:
+1. **Get the project_uuid** - Query the Generated Database (port 7690) to get the Project node and its `project_uuid`:
+   ```cypher
+   MATCH (p:Project) RETURN p.project_uuid
+   ```
+   This UUID must be included in ALL entities you create (ManagementPlan, Document, etc.).
+
+2. **Understand company profile** by:
    - Reviewing company information provided
    - Understanding certifications and capabilities
    - Identifying scope of QSE system needed
 
-2. **Determine content requirements** by:
+3. **Determine content requirements** by:
    - Identifying essential procedures for the company type
    - Considering ISO certification requirements
    - Understanding industry-specific needs
