@@ -76,24 +76,24 @@ export const AreaCodeMetadata: EntityMetadata = {
 };
 
 export const AreaCodeSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   description: z.string(),
 });
 
 export const AREA_CODE_QUERIES = {
   getAll: `
-    MATCH (a:AreaCode {project_id: $projectId})
+    MATCH (a:AreaCode {projectId: $projectId})
     RETURN a
     ORDER BY a.code
   `,
   getByCode: `
-    MATCH (a:AreaCode {project_id: $projectId, code: $code})
+    MATCH (a:AreaCode {projectId: $projectId, code: $code})
     RETURN a
   `,
   create: `
     CREATE (a:AreaCode {
-      project_id: $project_id,
+      projectId: $projectId,
       code: $code,
       description: $description,
       createdAt: datetime(),
@@ -110,12 +110,12 @@ export const AREA_CODE_QUERIES = {
  * Document and drawing register with revisions
  */
 export interface DocumentNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   documentNumber: string;
   revisionCode: string;
   docKind: 'drawing' | 'document';
-  title?: string;
-  type?: 'specification' | 'drawing' | 'report' | 'procedure' | 'plan' | 'correspondence' | 'other';
+  title: string;
+  type: 'specification' | 'drawing' | 'report' | 'procedure' | 'plan' | 'correspondence' | 'other';
   discipline?: 'civil' | 'structural' | 'electrical' | 'mechanical' | 'architectural' | 'other';
   status: 'draft' | 'in_review' | 'approved' | 'superseded' | 'archived';
   issueDate?: Date;
@@ -123,6 +123,7 @@ export interface DocumentNode {
   fileName?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const DocumentMetadata: EntityMetadata = {
@@ -147,41 +148,100 @@ export const DocumentMetadata: EntityMetadata = {
 };
 
 export const DocumentSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   documentNumber: z.string(),
   revisionCode: z.string(),
   docKind: z.enum(['drawing', 'document']),
-  title: z.string().optional(),
-  type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']).optional(),
+  title: z.string(),
+  type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']),
+  discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']),
+  issueDate: z.coerce.date().optional(),
   fileUrl: z.string().optional(),
+  fileName: z.string().optional(),
 });
 
+export const CreateDocumentInputSchema = z.object({
+  documentNumber: z.string(),
+  revisionCode: z.string().default('A'),
+  docKind: z.enum(['drawing', 'document']).default('document'),
+  title: z.string(),
+  type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']).default('other'),
+  discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
+  status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']).default('draft'),
+  issueDate: z.coerce.date().optional(),
+  fileUrl: z.string().optional(),
+  fileName: z.string().optional(),
+});
+
+export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
+
+export const UpdateDocumentInputSchema = z.object({
+  revisionCode: z.string().optional(),
+  title: z.string().optional(),
+  type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']).optional(),
+  discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
+  status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']).optional(),
+  issueDate: z.coerce.date().optional(),
+  fileUrl: z.string().optional(),
+  fileName: z.string().optional(),
+});
+
+export type UpdateDocumentInput = z.infer<typeof UpdateDocumentInputSchema>;
+
 export const DOCUMENT_QUERIES = {
-  getAll: `
-    MATCH (d:Document {project_id: $projectId})
+  getAllDocuments: `
+    MATCH (d:Document {projectId: $projectId})
+    WHERE COALESCE(d.isDeleted, false) = false
     RETURN d
-    ORDER BY d.documentNumber, d.revisionCode
+    ORDER BY d.documentNumber, d.revisionCode DESC
   `,
-  getByDocNumber: `
-    MATCH (d:Document {project_id: $projectId, documentNumber: $documentNumber})
+  getDocumentByNumber: `
+    MATCH (d:Document {projectId: $projectId, documentNumber: $documentNumber})
+    WHERE COALESCE(d.isDeleted, false) = false
     RETURN d
     ORDER BY d.revisionCode DESC
   `,
-  create: `
+  createDocument: `
+    MATCH (p:Project {projectId: $projectId})
     CREATE (d:Document {
-      project_id: $project_id,
-      documentNumber: $documentNumber,
-      revisionCode: $revisionCode,
-      docKind: $docKind,
-      title: $title,
-      type: $type,
-      status: $status,
-      fileUrl: $fileUrl,
-      fileName: $fileName,
+      projectId: $projectId,
+      documentNumber: $properties.documentNumber,
+      revisionCode: COALESCE($properties.revisionCode, 'A'),
+      docKind: COALESCE($properties.docKind, 'document'),
+      title: $properties.title,
+      type: COALESCE($properties.type, 'other'),
+      discipline: $properties.discipline,
+      status: COALESCE($properties.status, 'draft'),
+      issueDate: CASE
+        WHEN $properties.issueDate IS NULL THEN null
+        ELSE datetime($properties.issueDate)
+      END,
+      fileUrl: $properties.fileUrl,
+      fileName: $properties.fileName,
       createdAt: datetime(),
-      updatedAt: datetime()
+      updatedAt: datetime(),
+      isDeleted: false
     })
+    MERGE (d)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN d
+  `,
+  updateDocument: `
+    MATCH (d:Document {projectId: $projectId, documentNumber: $documentNumber})
+    WHERE COALESCE(d.isDeleted, false) = false
+    SET d += $properties,
+        d.issueDate = CASE
+          WHEN $properties.issueDate IS NULL THEN d.issueDate
+          ELSE datetime($properties.issueDate)
+        END,
+        d.updatedAt = datetime()
+    RETURN d
+  `,
+  deleteDocument: `
+    MATCH (d:Document {projectId: $projectId, documentNumber: $documentNumber})
+    WHERE COALESCE(d.isDeleted, false) = false
+    SET d.isDeleted = true,
+        d.updatedAt = datetime()
     RETURN d
   `,
 };
@@ -193,7 +253,7 @@ export const DOCUMENT_QUERIES = {
  * Individual inspection/test points within ITPs
  */
 export interface InspectionPointNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   parentType: 'template' | 'instance';
   parentKey: string;
   sequence: number;
@@ -235,7 +295,7 @@ export const InspectionPointMetadata: EntityMetadata = {
 };
 
 export const InspectionPointSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   parentType: z.enum(['template', 'instance']),
   parentKey: z.string(),
   sequence: z.number(),
@@ -386,7 +446,7 @@ export const ITP_INSTANCE_QUERIES = {
  * Global, reusable ITP template
  */
 export interface ITPTemplateNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   docNo: string;
   description: string;
   workType: string;
@@ -531,7 +591,7 @@ export const ITP_TEMPLATE_QUERIES = {
  * Testing laboratory details
  */
 export interface LaboratoryNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   nataNumber?: string;
@@ -562,7 +622,7 @@ export const LaboratoryMetadata: EntityMetadata = {
 };
 
 export const LaboratorySchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   nataNumber: z.string().optional(),
@@ -570,12 +630,12 @@ export const LaboratorySchema = z.object({
 
 export const LABORATORY_QUERIES = {
   getAll: `
-    MATCH (l:Laboratory {project_id: $projectId})
+    MATCH (l:Laboratory {projectId: $projectId})
     RETURN l
     ORDER BY l.name
   `,
   getByCode: `
-    MATCH (l:Laboratory {project_id: $projectId, code: $code})
+    MATCH (l:Laboratory {projectId: $projectId, code: $code})
     RETURN l
   `,
 };
@@ -587,7 +647,7 @@ export const LABORATORY_QUERIES = {
  * Location Breakdown Structure node
  */
 export interface LBSNodeType {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   type: 'site' | 'zone' | 'chainage' | 'layer' | 'element' | 'building' | 'floor';
@@ -626,7 +686,7 @@ export const LBSNodeMetadata: EntityMetadata = {
 };
 
 export const LBSNodeSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   type: z.enum(['site', 'zone', 'chainage', 'layer', 'element', 'building', 'floor']),
@@ -636,12 +696,12 @@ export const LBSNodeSchema = z.object({
 
 export const LBS_NODE_QUERIES = {
   getAll: `
-    MATCH (l:LBSNode {project_id: $projectId})
+    MATCH (l:LBSNode {projectId: $projectId})
     RETURN l
     ORDER BY l.code
   `,
   getByCode: `
-    MATCH (l:LBSNode {project_id: $projectId, code: $code})
+    MATCH (l:LBSNode {projectId: $projectId, code: $code})
     RETURN l
   `,
 };
@@ -653,7 +713,7 @@ export const LBS_NODE_QUERIES = {
  * Discrete work package for quality tracking
  */
 export interface LotNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   status: 'open' | 'in_progress' | 'conformed' | 'closed';
   percentComplete: number;
@@ -868,18 +928,19 @@ export const LOT_QUERIES = {
  * Project management plans (PQP, OHSMP, EMP, etc.)
  */
 export interface ManagementPlanNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   type: 'PQP' | 'OHSMP' | 'EMP' | 'CEMP' | 'TMP';
   title: string;
   version: string;
-  status: 'draft' | 'in_review' | 'approved' | 'superseded';
+  approvalStatus: 'draft' | 'in_review' | 'approved' | 'superseded';
   approvedBy?: string;
   approvedDate?: Date;
-  content?: string;
+  summary?: string;
   htmlContent?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const ManagementPlanMetadata: EntityMetadata = {
@@ -902,24 +963,98 @@ export const ManagementPlanMetadata: EntityMetadata = {
 };
 
 export const ManagementPlanSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   type: z.enum(['PQP', 'OHSMP', 'EMP', 'CEMP', 'TMP']),
   title: z.string(),
   version: z.string(),
-  status: z.enum(['draft', 'in_review', 'approved', 'superseded']),
+  approvalStatus: z.enum(['draft', 'in_review', 'approved', 'superseded']),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  summary: z.string().optional(),
   htmlContent: z.string().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateManagementPlanInputSchema = z.object({
+  type: z.enum(['PQP', 'OHSMP', 'EMP', 'CEMP', 'TMP']),
+  title: z.string(),
+  version: z.string().default('1.0'),
+  approvalStatus: z.enum(['draft', 'in_review', 'approved', 'superseded']).default('draft'),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  summary: z.string().optional(),
+  htmlContent: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateManagementPlanInput = z.infer<typeof CreateManagementPlanInputSchema>;
+
+export const UpdateManagementPlanInputSchema = z.object({
+  title: z.string().optional(),
+  version: z.string().optional(),
+  approvalStatus: z.enum(['draft', 'in_review', 'approved', 'superseded']).optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  summary: z.string().optional(),
+  htmlContent: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateManagementPlanInput = z.infer<typeof UpdateManagementPlanInputSchema>;
+
 export const MANAGEMENT_PLAN_QUERIES = {
-  getAll: `
-    MATCH (m:ManagementPlan {project_id: $projectId})
+  getAllPlans: `
+    MATCH (m:ManagementPlan {projectId: $projectId})
+    WHERE COALESCE(m.isDeleted, false) = false
     RETURN m
     ORDER BY m.type, m.version DESC
   `,
-  getByType: `
-    MATCH (m:ManagementPlan {project_id: $projectId, type: $type})
+  getPlanByType: `
+    MATCH (m:ManagementPlan {projectId: $projectId, type: $type})
+    WHERE COALESCE(m.isDeleted, false) = false
     RETURN m
     ORDER BY m.version DESC
+  `,
+  createPlan: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (m:ManagementPlan {
+      projectId: $projectId,
+      type: $properties.type,
+      title: $properties.title,
+      version: COALESCE($properties.version, '1.0'),
+      approvalStatus: COALESCE($properties.approvalStatus, 'draft'),
+      approvedBy: $properties.approvedBy,
+      approvedDate: CASE
+        WHEN $properties.approvedDate IS NULL THEN null
+        ELSE datetime($properties.approvedDate)
+      END,
+      summary: $properties.summary,
+      htmlContent: $properties.htmlContent,
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (m)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN m
+  `,
+  updatePlan: `
+    MATCH (m:ManagementPlan {projectId: $projectId, id: $planId})
+    WHERE COALESCE(m.isDeleted, false) = false
+    SET m += $properties,
+        m.approvedDate = CASE
+          WHEN $properties.approvedDate IS NULL THEN m.approvedDate
+          ELSE datetime($properties.approvedDate)
+        END,
+        m.updatedAt = datetime()
+    RETURN m
+  `,
+  deletePlan: `
+    MATCH (m:ManagementPlan {projectId: $projectId, id: $planId})
+    WHERE COALESCE(m.isDeleted, false) = false
+    SET m.isDeleted = true,
+        m.updatedAt = datetime()
+    RETURN m
   `,
 };
 
@@ -930,12 +1065,13 @@ export const MANAGEMENT_PLAN_QUERIES = {
  * Construction materials with approvals
  */
 export interface MaterialNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   type: string;
   supplier: string;
   specification: string;
+  productCode?: string;
   batchNumber?: string;
   certificateId?: string;
   approvalStatus: 'pending' | 'approved' | 'rejected';
@@ -944,6 +1080,7 @@ export interface MaterialNode {
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const MaterialMetadata: EntityMetadata = {
@@ -967,23 +1104,104 @@ export const MaterialMetadata: EntityMetadata = {
 };
 
 export const MaterialSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   type: z.string(),
   supplier: z.string(),
   specification: z.string(),
+  productCode: z.string().optional(),
+  batchNumber: z.string().optional(),
+  certificateId: z.string().optional(),
   approvalStatus: z.enum(['pending', 'approved', 'rejected']),
+  notes: z.string().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
 });
 
+export const CreateMaterialInputSchema = z.object({
+  code: z.string().optional(),
+  name: z.string(),
+  type: z.string(),
+  supplier: z.string(),
+  specification: z.string(),
+  productCode: z.string().optional(),
+  batchNumber: z.string().optional(),
+  certificateId: z.string().optional(),
+  approvalStatus: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+  notes: z.string().optional(),
+});
+
+export type CreateMaterialInput = z.infer<typeof CreateMaterialInputSchema>;
+
+export const UpdateMaterialInputSchema = z.object({
+  name: z.string().optional(),
+  type: z.string().optional(),
+  supplier: z.string().optional(),
+  specification: z.string().optional(),
+  productCode: z.string().optional(),
+  batchNumber: z.string().optional(),
+  certificateId: z.string().optional(),
+  approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+  notes: z.string().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+});
+
+export type UpdateMaterialInput = z.infer<typeof UpdateMaterialInputSchema>;
+
 export const MATERIAL_QUERIES = {
-  getAll: `
-    MATCH (m:Material {project_id: $projectId})
+  getAllMaterials: `
+    MATCH (m:Material {projectId: $projectId})
+    WHERE COALESCE(m.isDeleted, false) = false
     RETURN m
-    ORDER BY m.code
+    ORDER BY m.name
   `,
-  getByCode: `
-    MATCH (m:Material {project_id: $projectId, code: $code})
+  getApprovedMaterials: `
+    MATCH (m:Material {projectId: $projectId, approvalStatus: 'approved'})
+    WHERE COALESCE(m.isDeleted, false) = false
+    RETURN m
+    ORDER BY m.name
+  `,
+  getMaterialByCode: `
+    MATCH (m:Material {projectId: $projectId, code: $code})
+    WHERE COALESCE(m.isDeleted, false) = false
+    RETURN m
+  `,
+  createMaterial: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (m:Material {
+      projectId: $projectId,
+      code: coalesce($properties.code, toString(randomUUID())),
+      name: $properties.name,
+      type: $properties.type,
+      supplier: $properties.supplier,
+      specification: $properties.specification,
+      productCode: $properties.productCode,
+      batchNumber: $properties.batchNumber,
+      certificateId: $properties.certificateId,
+      approvalStatus: coalesce($properties.approvalStatus, 'pending'),
+      notes: $properties.notes,
+      approvedBy: $properties.approvedBy,
+      approvedDate: $properties.approvedDate,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (m)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN m
+  `,
+  updateMaterial: `
+    MATCH (m:Material {projectId: $projectId, code: $code})
+    WHERE COALESCE(m.isDeleted, false) = false
+    SET m += $properties,
+        m.updatedAt = datetime()
+    RETURN m
+  `,
+  deleteMaterial: `
+    MATCH (m:Material {projectId: $projectId, code: $code})
+    SET m.isDeleted = true,
+        m.updatedAt = datetime()
     RETURN m
   `,
 };
@@ -995,23 +1213,23 @@ export const MATERIAL_QUERIES = {
  * Concrete or material mix designs
  */
 export interface MixDesignNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
-  name: string;
-  materialCode: string;
-  strength?: string;
-  slump?: string;
+  description: string;
+  type: string;
+  materialCode?: string;
+  targetStrength?: number;
+  slump?: number;
   components: Array<{
     material: string;
     quantity: number;
     unit: string;
   }>;
   status: 'draft' | 'approved' | 'rejected';
-  approvedBy?: string;
-  approvedDate?: Date;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const MixDesignMetadata: EntityMetadata = {
@@ -1035,26 +1253,106 @@ export const MixDesignMetadata: EntityMetadata = {
 };
 
 export const MixDesignSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
-  name: z.string(),
-  materialCode: z.string(),
+  description: z.string(),
+  type: z.string(),
+  materialCode: z.string().optional(),
+  targetStrength: z.number().optional(),
+  slump: z.number().optional(),
   components: z.array(z.object({
     material: z.string(),
     quantity: z.number(),
     unit: z.string(),
-  })),
+  })).optional(),
   status: z.enum(['draft', 'approved', 'rejected']),
+  notes: z.string().optional(),
 });
 
+export const CreateMixDesignInputSchema = z.object({
+  code: z.string(),
+  description: z.string(),
+  type: z.string(),
+  materialCode: z.string().optional(),
+  targetStrength: z.number().optional(),
+  slump: z.number().optional(),
+  components: z.array(z.object({
+    material: z.string(),
+    quantity: z.number(),
+    unit: z.string(),
+  })).optional(),
+  status: z.enum(['draft', 'approved', 'rejected']).default('draft'),
+  notes: z.string().optional(),
+});
+
+export type CreateMixDesignInput = z.infer<typeof CreateMixDesignInputSchema>;
+
+export const UpdateMixDesignInputSchema = z.object({
+  description: z.string().optional(),
+  type: z.string().optional(),
+  materialCode: z.string().optional(),
+  targetStrength: z.number().optional(),
+  slump: z.number().optional(),
+  components: z.array(z.object({
+    material: z.string(),
+    quantity: z.number(),
+    unit: z.string(),
+  })).optional(),
+  status: z.enum(['draft', 'approved', 'rejected']).optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateMixDesignInput = z.infer<typeof UpdateMixDesignInputSchema>;
+
 export const MIX_DESIGN_QUERIES = {
-  getAll: `
-    MATCH (m:MixDesign {project_id: $projectId})
+  getAllMixDesigns: `
+    MATCH (m:MixDesign {projectId: $projectId})
+    WHERE COALESCE(m.isDeleted, false) = false
     RETURN m
     ORDER BY m.code
   `,
-  getByCode: `
-    MATCH (m:MixDesign {project_id: $projectId, code: $code})
+  getApprovedMixDesigns: `
+    MATCH (m:MixDesign {projectId: $projectId, status: 'approved'})
+    WHERE COALESCE(m.isDeleted, false) = false
+    RETURN m
+    ORDER BY m.code
+  `,
+  getMixDesignByCode: `
+    MATCH (m:MixDesign {projectId: $projectId, code: $code})
+    WHERE COALESCE(m.isDeleted, false) = false
+    RETURN m
+  `,
+  createMixDesign: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (m:MixDesign {
+      projectId: $projectId,
+      code: $properties.code,
+      description: $properties.description,
+      type: $properties.type,
+      materialCode: $properties.materialCode,
+      targetStrength: $properties.targetStrength,
+      slump: $properties.slump,
+      components: coalesce($properties.components, []),
+      status: coalesce($properties.status, 'draft'),
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (m)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN m
+  `,
+  updateMixDesign: `
+    MATCH (m:MixDesign {projectId: $projectId, code: $code})
+    WHERE COALESCE(m.isDeleted, false) = false
+    SET m += $properties,
+        m.updatedAt = datetime()
+    RETURN m
+  `,
+  deleteMixDesign: `
+    MATCH (m:MixDesign {projectId: $projectId, code: $code})
+    SET m.isDeleted = true,
+        m.updatedAt = datetime()
     RETURN m
   `,
 };
@@ -1066,7 +1364,7 @@ export const MIX_DESIGN_QUERIES = {
  * Quality issues and defects
  */
 export interface NCRNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   description: string;
   severity: 'minor' | 'major' | 'critical';
@@ -1303,7 +1601,7 @@ export const PROJECT_QUERIES = {
  * Bill of Quantities item
  */
 export interface ScheduleItemNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   description: string;
   unit: string;
@@ -1311,10 +1609,11 @@ export interface ScheduleItemNode {
   rate: number;
   amount: number;
   category?: string;
-  workType?: string;
+  workTypeCode?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const ScheduleItemMetadata: EntityMetadata = {
@@ -1337,24 +1636,92 @@ export const ScheduleItemMetadata: EntityMetadata = {
 };
 
 export const ScheduleItemSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
   description: z.string(),
   unit: z.string(),
   quantity: z.number(),
   rate: z.number(),
   amount: z.number(),
-  workType: z.string().optional(),
+  category: z.string().optional(),
+  workTypeCode: z.string().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateScheduleItemInputSchema = z.object({
+  number: z.string(),
+  description: z.string(),
+  unit: z.string(),
+  quantity: z.number(),
+  rate: z.number(),
+  category: z.string().optional(),
+  workTypeCode: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateScheduleItemInput = z.infer<typeof CreateScheduleItemInputSchema>;
+
+export const UpdateScheduleItemInputSchema = z.object({
+  description: z.string().optional(),
+  unit: z.string().optional(),
+  quantity: z.number().optional(),
+  rate: z.number().optional(),
+  category: z.string().optional(),
+  workTypeCode: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateScheduleItemInput = z.infer<typeof UpdateScheduleItemInputSchema>;
+
 export const SCHEDULE_ITEM_QUERIES = {
-  getAll: `
-    MATCH (s:ScheduleItem {project_id: $projectId})
+  getAllItems: `
+    MATCH (s:ScheduleItem {projectId: $projectId})
+    WHERE COALESCE(s.isDeleted, false) = false
     RETURN s
     ORDER BY s.number
   `,
-  getByNumber: `
-    MATCH (s:ScheduleItem {project_id: $projectId, number: $number})
+  getItemByNumber: `
+    MATCH (s:ScheduleItem {projectId: $projectId, number: $number})
+    WHERE COALESCE(s.isDeleted, false) = false
+    RETURN s
+  `,
+  createItem: `
+    MATCH (p:Project {projectId: $projectId})
+    WITH p, $properties AS props
+    CREATE (s:ScheduleItem {
+      projectId: $projectId,
+      number: props.number,
+      description: props.description,
+      unit: props.unit,
+      quantity: toFloat(props.quantity),
+      rate: toFloat(props.rate),
+      amount: toFloat(props.quantity) * toFloat(props.rate),
+      category: props.category,
+      workTypeCode: props.workTypeCode,
+      notes: props.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (s)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN s
+  `,
+  updateItem: `
+    MATCH (s:ScheduleItem {projectId: $projectId, number: $number})
+    WHERE COALESCE(s.isDeleted, false) = false
+    WITH s, $properties AS props
+    SET s += props,
+        s.quantity = COALESCE(toFloat(props.quantity), s.quantity),
+        s.rate = COALESCE(toFloat(props.rate), s.rate),
+        s.amount = COALESCE(toFloat(props.quantity), s.quantity) * COALESCE(toFloat(props.rate), s.rate),
+        s.updatedAt = datetime()
+    RETURN s
+  `,
+  deleteItem: `
+    MATCH (s:ScheduleItem {projectId: $projectId, number: $number})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s.isDeleted = true,
+        s.updatedAt = datetime()
     RETURN s
   `,
 };
@@ -1366,18 +1733,18 @@ export const SCHEDULE_ITEM_QUERIES = {
  * Site photos and progress images
  */
 export interface PhotoNode {
-  project_id: string;  // Foreign key to Project
-  fileUrl: string;
-  fileName?: string;
-  fileSize?: number;
-  mimeType?: string;
-  caption?: string;
+  projectId: string;  // Foreign key to Project
+  url: string;
+  description?: string;
   location?: string;
-  takenBy?: string;
-  takenDate?: Date;
+  takenBy: string;
+  capturedAt?: Date;
   tags?: string[];
+  fileName?: string;
+  mimeType?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const PhotoMetadata: EntityMetadata = {
@@ -1401,18 +1768,65 @@ export const PhotoMetadata: EntityMetadata = {
 };
 
 export const PhotoSchema = z.object({
-  project_id: z.string(),
-  fileUrl: z.string(),
+  projectId: z.string(),
+  url: z.string(),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  takenBy: z.string(),
+  capturedAt: z.coerce.date().optional(),
+  tags: z.array(z.string()).optional(),
   fileName: z.string().optional(),
-  caption: z.string().optional(),
-  takenDate: z.coerce.date().optional(),
+  mimeType: z.string().optional(),
 });
 
+export const CreatePhotoInputSchema = z.object({
+  url: z.string().url(),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  takenBy: z.string(),
+  capturedAt: z.coerce.date().optional(),
+  tags: z.array(z.string()).default([]),
+  fileName: z.string().optional(),
+  mimeType: z.string().optional(),
+});
+
+export type CreatePhotoInput = z.infer<typeof CreatePhotoInputSchema>;
+
 export const PHOTO_QUERIES = {
-  getAll: `
-    MATCH (p:Photo {project_id: $projectId})
+  getAllPhotos: `
+    MATCH (p:Photo {projectId: $projectId})
+    WHERE COALESCE(p.isDeleted, false) = false
     RETURN p
-    ORDER BY p.takenDate DESC
+    ORDER BY COALESCE(p.capturedAt, p.createdAt) DESC
+  `,
+  createPhoto: `
+    MATCH (proj:Project {projectId: $projectId})
+    CREATE (p:Photo {
+      projectId: $projectId,
+      url: $properties.url,
+      description: $properties.description,
+      location: $properties.location,
+      takenBy: $properties.takenBy,
+      capturedAt: CASE
+        WHEN $properties.capturedAt IS NULL THEN datetime()
+        ELSE datetime($properties.capturedAt)
+      END,
+      tags: coalesce($properties.tags, []),
+      fileName: $properties.fileName,
+      mimeType: $properties.mimeType,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (p)-[:BELONGS_TO_PROJECT]->(proj)
+    RETURN p
+  `,
+  deletePhoto: `
+    MATCH (p:Photo {projectId: $projectId, id: $photoId})
+    WHERE COALESCE(p.isDeleted, false) = false
+    SET p.isDeleted = true,
+        p.updatedAt = datetime()
+    RETURN p
   `,
 };
 
@@ -1423,24 +1837,21 @@ export const PHOTO_QUERIES = {
  * Progress payment claims
  */
 export interface ProgressClaimNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
-  claimDate: Date;
-  periodStart: Date;
-  periodEnd: Date;
-  status: 'draft' | 'submitted' | 'approved' | 'paid';
-  totalAmount: number;
-  claimItems: Array<{
-    scheduleItemNumber: string;
-    quantityClaimed: number;
-    amountClaimed: number;
-  }>;
+  period: string;
+  cutoffDate: Date;
+  status: 'draft' | 'submitted' | 'under_review' | 'certified' | 'paid';
+  claimedValue: number;
+  certifiedValue?: number;
   submittedBy?: string;
+  submittedDate?: Date;
   approvedBy?: string;
   approvedDate?: Date;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const ProgressClaimMetadata: EntityMetadata = {
@@ -1461,28 +1872,115 @@ export const ProgressClaimMetadata: EntityMetadata = {
 };
 
 export const ProgressClaimSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
-  claimDate: z.coerce.date(),
-  periodStart: z.coerce.date(),
-  periodEnd: z.coerce.date(),
-  status: z.enum(['draft', 'submitted', 'approved', 'paid']),
-  totalAmount: z.number(),
-  claimItems: z.array(z.object({
-    scheduleItemNumber: z.string(),
-    quantityClaimed: z.number(),
-    amountClaimed: z.number(),
-  })),
+  period: z.string(),
+  cutoffDate: z.coerce.date(),
+  status: z.enum(['draft', 'submitted', 'under_review', 'certified', 'paid']),
+  claimedValue: z.number(),
+  certifiedValue: z.number().optional(),
+  submittedBy: z.string().optional(),
+  submittedDate: z.coerce.date().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
 });
+
+export const CreateProgressClaimInputSchema = z.object({
+  period: z.string(),
+  cutoffDate: z.coerce.date(),
+  status: z.enum(['draft', 'submitted', 'under_review', 'certified', 'paid']).default('draft'),
+  claimedValue: z.number().default(0),
+  certifiedValue: z.number().optional(),
+  submittedBy: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateProgressClaimInput = z.infer<typeof CreateProgressClaimInputSchema>;
+
+export const UpdateProgressClaimInputSchema = z.object({
+  period: z.string().optional(),
+  cutoffDate: z.coerce.date().optional(),
+  status: z.enum(['draft', 'submitted', 'under_review', 'certified', 'paid']).optional(),
+  claimedValue: z.number().optional(),
+  certifiedValue: z.number().optional(),
+  submittedBy: z.string().optional(),
+  submittedDate: z.coerce.date().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateProgressClaimInput = z.infer<typeof UpdateProgressClaimInputSchema>;
 
 export const PROGRESS_CLAIM_QUERIES = {
   getAllClaims: `
-    MATCH (c:ProgressClaim {project_id: $projectId})
+    MATCH (c:ProgressClaim {projectId: $projectId})
+    WHERE COALESCE(c.isDeleted, false) = false
     RETURN c
-    ORDER BY c.number DESC
+    ORDER BY c.cutoffDate DESC
   `,
-  getByNumber: `
-    MATCH (c:ProgressClaim {project_id: $projectId, number: $number})
+  getClaimByNumber: `
+    MATCH (c:ProgressClaim {projectId: $projectId, number: $number})
+    WHERE COALESCE(c.isDeleted, false) = false
+    RETURN c
+  `,
+  createClaim: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (c:ProgressClaim {
+      projectId: $projectId,
+      number: coalesce($properties.number, toString(randomUUID())),
+      period: $properties.period,
+      cutoffDate: datetime($properties.cutoffDate),
+      status: coalesce($properties.status, 'draft'),
+      claimedValue: coalesce(toFloat($properties.claimedValue), 0),
+      certifiedValue: coalesce(toFloat($properties.certifiedValue), 0),
+      submittedBy: $properties.submittedBy,
+      submittedDate: CASE
+        WHEN $properties.submittedBy IS NULL THEN null
+        ELSE datetime()
+      END,
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (c)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN c
+  `,
+  updateClaim: `
+    MATCH (c:ProgressClaim {projectId: $projectId, number: $number})
+    WHERE COALESCE(c.isDeleted, false) = false
+    SET c += {
+          period: COALESCE($properties.period, c.period),
+          status: COALESCE($properties.status, c.status),
+          claimedValue: COALESCE(toFloat($properties.claimedValue), c.claimedValue),
+          certifiedValue: COALESCE(toFloat($properties.certifiedValue), c.certifiedValue),
+          submittedBy: COALESCE($properties.submittedBy, c.submittedBy),
+          notes: COALESCE($properties.notes, c.notes)
+        },
+        c.cutoffDate = CASE
+          WHEN $properties.cutoffDate IS NULL THEN c.cutoffDate
+          ELSE datetime($properties.cutoffDate)
+        END,
+        c.submittedDate = CASE
+          WHEN $properties.submittedDate IS NOT NULL THEN datetime($properties.submittedDate)
+          WHEN $properties.submittedBy IS NOT NULL AND c.submittedDate IS NULL THEN datetime()
+          ELSE c.submittedDate
+        END,
+        c.approvedBy = COALESCE($properties.approvedBy, c.approvedBy),
+        c.approvedDate = CASE
+          WHEN $properties.approvedDate IS NULL THEN c.approvedDate
+          ELSE datetime($properties.approvedDate)
+        END,
+        c.updatedAt = datetime()
+    RETURN c
+  `,
+  deleteClaim: `
+    MATCH (c:ProgressClaim {projectId: $projectId, number: $number})
+    WHERE COALESCE(c.isDeleted, false) = false
+    SET c.isDeleted = true,
+        c.updatedAt = datetime()
     RETURN c
   `,
 };
@@ -1494,7 +1992,7 @@ export const PROGRESS_CLAIM_QUERIES = {
  * Lot quantities linked to schedule items
  */
 export interface QuantityNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   lotNumber: string;
   scheduleItemNumber: string;
   quantity: number;
@@ -1525,7 +2023,7 @@ export const QuantityMetadata: EntityMetadata = {
 };
 
 export const QuantitySchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   lotNumber: z.string(),
   scheduleItemNumber: z.string(),
   quantity: z.number(),
@@ -1534,7 +2032,7 @@ export const QuantitySchema = z.object({
 
 export const QUANTITY_QUERIES = {
   getByLot: `
-    MATCH (q:Quantity {project_id: $projectId, lotNumber: $lotNumber})
+    MATCH (q:Quantity {projectId: $projectId, lotNumber: $lotNumber})
     RETURN q
   `,
 };
@@ -1546,18 +2044,19 @@ export const QUANTITY_QUERIES = {
  * Physical samples for testing
  */
 export interface SampleNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   type: string;
   lotNumber: string;
   location: string;
   dateTaken: Date;
   takenBy: string;
-  labCode?: string;
+  labName?: string;
   status: 'collected' | 'in_transit' | 'at_lab' | 'tested' | 'disposed';
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const SampleMetadata: EntityMetadata = {
@@ -1582,24 +2081,101 @@ export const SampleMetadata: EntityMetadata = {
 };
 
 export const SampleSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
   type: z.string(),
   lotNumber: z.string(),
   location: z.string(),
   dateTaken: z.coerce.date(),
   takenBy: z.string(),
+  labName: z.string().optional(),
   status: z.enum(['collected', 'in_transit', 'at_lab', 'tested', 'disposed']),
+  notes: z.string().optional(),
 });
 
+export const CreateSampleInputSchema = z.object({
+  number: z.string().optional(),
+  type: z.string(),
+  lotNumber: z.string(),
+  location: z.string(),
+  dateTaken: z.coerce.date().optional(),
+  takenBy: z.string(),
+  labName: z.string().optional(),
+  status: z.enum(['collected', 'in_transit', 'at_lab', 'tested', 'disposed']).default('collected'),
+  notes: z.string().optional(),
+});
+
+export type CreateSampleInput = z.infer<typeof CreateSampleInputSchema>;
+
+export const UpdateSampleInputSchema = z.object({
+  type: z.string().optional(),
+  lotNumber: z.string().optional(),
+  location: z.string().optional(),
+  dateTaken: z.coerce.date().optional(),
+  takenBy: z.string().optional(),
+  labName: z.string().optional(),
+  status: z.enum(['collected', 'in_transit', 'at_lab', 'tested', 'disposed']).optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateSampleInput = z.infer<typeof UpdateSampleInputSchema>;
+
 export const SAMPLE_QUERIES = {
-  getAll: `
-    MATCH (s:Sample {project_id: $projectId})
+  getAllSamples: `
+    MATCH (s:Sample {projectId: $projectId})
+    WHERE COALESCE(s.isDeleted, false) = false
     RETURN s
     ORDER BY s.dateTaken DESC
   `,
-  getByNumber: `
-    MATCH (s:Sample {project_id: $projectId, number: $number})
+  getSamplesByLot: `
+    MATCH (s:Sample {projectId: $projectId, lotNumber: $lotNumber})
+    WHERE COALESCE(s.isDeleted, false) = false
+    RETURN s
+    ORDER BY s.dateTaken DESC
+  `,
+  getSampleByNumber: `
+    MATCH (s:Sample {projectId: $projectId, number: $number})
+    WHERE COALESCE(s.isDeleted, false) = false
+    RETURN s
+  `,
+  createSample: `
+    MATCH (p:Project {projectId: $projectId})
+    OPTIONAL MATCH (l:Lot {projectId: $projectId, number: coalesce($lotNumber, $properties.lotNumber)})
+    CREATE (s:Sample {
+      projectId: $projectId,
+      number: coalesce($properties.number, toString(randomUUID())),
+      type: $properties.type,
+      lotNumber: coalesce($properties.lotNumber, $lotNumber),
+      location: $properties.location,
+      dateTaken: CASE
+        WHEN $properties.dateTaken IS NULL THEN datetime()
+        ELSE datetime($properties.dateTaken)
+      END,
+      takenBy: $properties.takenBy,
+      labName: $properties.labName,
+      status: coalesce($properties.status, 'collected'),
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (s)-[:BELONGS_TO_PROJECT]->(p)
+    FOREACH (_ IN CASE WHEN l IS NULL THEN [] ELSE [1] END |
+      MERGE (s)-[:FROM_LOT]->(l)
+    )
+    RETURN s
+  `,
+  updateSample: `
+    MATCH (s:Sample {projectId: $projectId, number: $number})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s += $properties,
+        s.updatedAt = datetime()
+    RETURN s
+  `,
+  deleteSample: `
+    MATCH (s:Sample {projectId: $projectId, number: $number})
+    SET s.isDeleted = true,
+        s.updatedAt = datetime()
     RETURN s
   `,
 };
@@ -1611,7 +2187,7 @@ export const SAMPLE_QUERIES = {
  * Industry standards and specifications
  */
 export interface StandardNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   title: string;
   version?: string;
@@ -1643,7 +2219,7 @@ export const StandardMetadata: EntityMetadata = {
 };
 
 export const StandardSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   title: z.string(),
   version: z.string().optional(),
@@ -1652,7 +2228,7 @@ export const StandardSchema = z.object({
 
 export const STANDARD_QUERIES = {
   getAll: `
-    MATCH (s:Standard {project_id: $projectId})
+    MATCH (s:Standard {projectId: $projectId})
     RETURN s
     ORDER BY s.code
   `,
@@ -1665,7 +2241,7 @@ export const STANDARD_QUERIES = {
  * Material and equipment suppliers
  */
 export interface SupplierNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   abn?: string;
@@ -1696,7 +2272,7 @@ export const SupplierMetadata: EntityMetadata = {
 };
 
 export const SupplierSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   contactEmail: z.string().optional(),
@@ -1704,7 +2280,7 @@ export const SupplierSchema = z.object({
 
 export const SUPPLIER_QUERIES = {
   getAll: `
-    MATCH (s:Supplier {project_id: $projectId})
+    MATCH (s:Supplier {projectId: $projectId})
     RETURN s
     ORDER BY s.name
   `,
@@ -1717,7 +2293,7 @@ export const SUPPLIER_QUERIES = {
  * Laboratory test requests
  */
 export interface TestRequestNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   testType: string;
   status: 'requested' | 'in_progress' | 'completed' | 'approved' | 'failed';
@@ -1729,11 +2305,13 @@ export interface TestRequestNode {
   materialCode?: string;
   sampleNumber?: string;
   testMethodCode?: string;
+  labName?: string;
   results?: Record<string, any>;
   passed?: boolean;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const TestRequestMetadata: EntityMetadata = {
@@ -1760,22 +2338,128 @@ export const TestRequestMetadata: EntityMetadata = {
 };
 
 export const TestRequestSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
   testType: z.string(),
   status: z.enum(['requested', 'in_progress', 'completed', 'approved', 'failed']),
   requestedDate: z.coerce.date(),
   requestedBy: z.string(),
+  dueDate: z.coerce.date().optional(),
+  completedDate: z.coerce.date().optional(),
+  lotNumber: z.string().optional(),
+  materialCode: z.string().optional(),
+  sampleNumber: z.string().optional(),
+  testMethodCode: z.string().optional(),
+  labName: z.string().optional(),
+  passed: z.boolean().optional(),
+  notes: z.string().optional(),
+  results: z.record(z.any()).optional(),
 });
 
+export const CreateTestRequestInputSchema = z.object({
+  number: z.string().optional(),
+  testType: z.string(),
+  status: z.enum(['requested', 'in_progress', 'completed', 'approved', 'failed']).default('requested'),
+  requestedDate: z.coerce.date().optional(),
+  requestedBy: z.string(),
+  dueDate: z.coerce.date().optional(),
+  lotNumber: z.string().optional(),
+  materialCode: z.string().optional(),
+  sampleNumber: z.string().optional(),
+  testMethodCode: z.string().optional(),
+  labName: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateTestRequestInput = z.infer<typeof CreateTestRequestInputSchema>;
+
+export const UpdateTestRequestInputSchema = z.object({
+  testType: z.string().optional(),
+  status: z.enum(['requested', 'in_progress', 'completed', 'approved', 'failed']).optional(),
+  requestedDate: z.coerce.date().optional(),
+  requestedBy: z.string().optional(),
+  dueDate: z.coerce.date().optional(),
+  completedDate: z.coerce.date().optional(),
+  lotNumber: z.string().optional(),
+  materialCode: z.string().optional(),
+  sampleNumber: z.string().optional(),
+  testMethodCode: z.string().optional(),
+  labName: z.string().optional(),
+  passed: z.boolean().optional(),
+  notes: z.string().optional(),
+  results: z.record(z.any()).optional(),
+});
+
+export type UpdateTestRequestInput = z.infer<typeof UpdateTestRequestInputSchema>;
+
 export const TEST_REQUEST_QUERIES = {
-  getAll: `
-    MATCH (t:TestRequest {project_id: $projectId})
+  getAllTests: `
+    MATCH (t:TestRequest {projectId: $projectId})
+    WHERE COALESCE(t.isDeleted, false) = false
     RETURN t
     ORDER BY t.requestedDate DESC
   `,
-  getByNumber: `
-    MATCH (t:TestRequest {project_id: $projectId, number: $number})
+  getPendingTests: `
+    MATCH (t:TestRequest {projectId: $projectId, status: 'requested'})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+    ORDER BY t.requestedDate DESC
+  `,
+  getTestByNumber: `
+    MATCH (t:TestRequest {projectId: $projectId, number: $number})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+  `,
+  createTest: `
+    MATCH (p:Project {projectId: $projectId})
+    OPTIONAL MATCH (l:Lot {projectId: $projectId, number: coalesce($properties.lotNumber, $lotNumber)})
+    CREATE (t:TestRequest {
+      projectId: $projectId,
+      number: coalesce($properties.number, toString(randomUUID())),
+      testType: $properties.testType,
+      status: coalesce($properties.status, 'requested'),
+      requestedDate: CASE
+        WHEN $properties.requestedDate IS NULL THEN datetime()
+        ELSE datetime($properties.requestedDate)
+      END,
+      requestedBy: $properties.requestedBy,
+      dueDate: CASE
+        WHEN $properties.dueDate IS NULL THEN null
+        ELSE datetime($properties.dueDate)
+      END,
+      completedDate: CASE
+        WHEN $properties.completedDate IS NULL THEN null
+        ELSE datetime($properties.completedDate)
+      END,
+      lotNumber: coalesce($properties.lotNumber, $lotNumber),
+      materialCode: $properties.materialCode,
+      sampleNumber: $properties.sampleNumber,
+      testMethodCode: $properties.testMethodCode,
+      labName: $properties.labName,
+      results: coalesce($properties.results, {}),
+      passed: $properties.passed,
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (t)-[:BELONGS_TO_PROJECT]->(p)
+    FOREACH (_ IN CASE WHEN l IS NULL THEN [] ELSE [1] END |
+      MERGE (t)-[:FOR_LOT]->(l)
+    )
+    RETURN t
+  `,
+  updateTest: `
+    MATCH (t:TestRequest {projectId: $projectId, number: $number})
+    WHERE COALESCE(t.isDeleted, false) = false
+    SET t += $properties,
+        t.updatedAt = datetime()
+    RETURN t
+  `,
+  deleteTest: `
+    MATCH (t:TestRequest {projectId: $projectId, number: $number})
+    SET t.isDeleted = true,
+        t.updatedAt = datetime()
     RETURN t
   `,
 };
@@ -1787,15 +2471,17 @@ export const TEST_REQUEST_QUERIES = {
  * Standardized test methods
  */
 export interface TestMethodNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   standard: string;
   procedure: string;
   acceptanceCriteria?: string;
   frequency?: string;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const TestMethodMetadata: EntityMetadata = {
@@ -1817,21 +2503,80 @@ export const TestMethodMetadata: EntityMetadata = {
 };
 
 export const TestMethodSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   standard: z.string(),
   procedure: z.string(),
+  acceptanceCriteria: z.string().optional(),
+  frequency: z.string().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateTestMethodInputSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  standard: z.string(),
+  procedure: z.string(),
+  acceptanceCriteria: z.string().optional(),
+  frequency: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateTestMethodInput = z.infer<typeof CreateTestMethodInputSchema>;
+
+export const UpdateTestMethodInputSchema = z.object({
+  name: z.string().optional(),
+  standard: z.string().optional(),
+  procedure: z.string().optional(),
+  acceptanceCriteria: z.string().optional(),
+  frequency: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateTestMethodInput = z.infer<typeof UpdateTestMethodInputSchema>;
+
 export const TEST_METHOD_QUERIES = {
-  getAll: `
-    MATCH (t:TestMethod {project_id: $projectId})
+  getAllMethods: `
+    MATCH (t:TestMethod {projectId: $projectId})
+    WHERE COALESCE(t.isDeleted, false) = false
     RETURN t
     ORDER BY t.code
   `,
-  getByCode: `
-    MATCH (t:TestMethod {project_id: $projectId, code: $code})
+  getMethodByCode: `
+    MATCH (t:TestMethod {projectId: $projectId, code: $code})
+    WHERE COALESCE(t.isDeleted, false) = false
+    RETURN t
+  `,
+  createMethod: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (t:TestMethod {
+      projectId: $projectId,
+      code: $properties.code,
+      name: $properties.name,
+      standard: $properties.standard,
+      procedure: $properties.procedure,
+      acceptanceCriteria: $properties.acceptanceCriteria,
+      frequency: $properties.frequency,
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (t)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN t
+  `,
+  updateMethod: `
+    MATCH (t:TestMethod {projectId: $projectId, code: $code})
+    WHERE COALESCE(t.isDeleted, false) = false
+    SET t += $properties,
+        t.updatedAt = datetime()
+    RETURN t
+  `,
+  deleteMethod: `
+    MATCH (t:TestMethod {projectId: $projectId, code: $code})
+    SET t.isDeleted = true,
+        t.updatedAt = datetime()
     RETURN t
   `,
 };
@@ -1903,18 +2648,20 @@ export const USER_QUERIES = {
  * Contract variations
  */
 export interface VariationNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   number: string;
   description: string;
-  status: 'proposed' | 'approved' | 'rejected' | 'implemented';
-  amount: number;
-  proposedDate: Date;
-  approvedDate?: Date;
+  status: 'identified' | 'notified' | 'under_review' | 'quoted' | 'approved' | 'rejected' | 'implemented';
+  claimedValue: number;
+  approvedValue?: number;
+  dateIdentified: Date;
+  dateNotified?: Date;
   approvedBy?: string;
-  reason?: string;
+  approvedDate?: Date;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const VariationMetadata: EntityMetadata = {
@@ -1935,22 +2682,109 @@ export const VariationMetadata: EntityMetadata = {
 };
 
 export const VariationSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   number: z.string(),
   description: z.string(),
-  status: z.enum(['proposed', 'approved', 'rejected', 'implemented']),
-  amount: z.number(),
-  proposedDate: z.coerce.date(),
+  status: z.enum(['identified', 'notified', 'under_review', 'quoted', 'approved', 'rejected', 'implemented']),
+  claimedValue: z.number(),
+  approvedValue: z.number().optional(),
+  dateIdentified: z.coerce.date(),
+  dateNotified: z.coerce.date().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
 });
 
+export const CreateVariationInputSchema = z.object({
+  description: z.string(),
+  claimedValue: z.number(),
+  dateIdentified: z.coerce.date(),
+  status: z.enum(['identified', 'notified', 'under_review', 'quoted', 'approved', 'rejected', 'implemented']).default('identified'),
+  dateNotified: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateVariationInput = z.infer<typeof CreateVariationInputSchema>;
+
+export const UpdateVariationInputSchema = z.object({
+  description: z.string().optional(),
+  claimedValue: z.number().optional(),
+  approvedValue: z.number().optional(),
+  status: z.enum(['identified', 'notified', 'under_review', 'quoted', 'approved', 'rejected', 'implemented']).optional(),
+  dateIdentified: z.coerce.date().optional(),
+  dateNotified: z.coerce.date().optional(),
+  approvedBy: z.string().optional(),
+  approvedDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateVariationInput = z.infer<typeof UpdateVariationInputSchema>;
+
 export const VARIATION_QUERIES = {
-  getAll: `
-    MATCH (v:Variation {project_id: $projectId})
+  getAllVariations: `
+    MATCH (v:Variation {projectId: $projectId})
+    WHERE COALESCE(v.isDeleted, false) = false
     RETURN v
-    ORDER BY v.number DESC
+    ORDER BY v.dateIdentified DESC
   `,
-  getByNumber: `
-    MATCH (v:Variation {project_id: $projectId, number: $number})
+  getVariationByNumber: `
+    MATCH (v:Variation {projectId: $projectId, number: $number})
+    WHERE COALESCE(v.isDeleted, false) = false
+    RETURN v
+  `,
+  createVariation: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (v:Variation {
+      projectId: $projectId,
+      number: coalesce($properties.number, toString(randomUUID())),
+      description: $properties.description,
+      status: coalesce($properties.status, 'identified'),
+      claimedValue: toFloat($properties.claimedValue),
+      approvedValue: coalesce(toFloat($properties.approvedValue), 0),
+      dateIdentified: datetime($properties.dateIdentified),
+      dateNotified: CASE
+        WHEN $properties.dateNotified IS NULL THEN null
+        ELSE datetime($properties.dateNotified)
+      END,
+      notes: $properties.notes,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (v)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN v
+  `,
+  updateVariation: `
+    MATCH (v:Variation {projectId: $projectId, number: $number})
+    WHERE COALESCE(v.isDeleted, false) = false
+    SET v += {
+          description: COALESCE($properties.description, v.description),
+          status: COALESCE($properties.status, v.status),
+          claimedValue: COALESCE(toFloat($properties.claimedValue), v.claimedValue),
+          approvedValue: COALESCE(toFloat($properties.approvedValue), v.approvedValue),
+          approvedBy: COALESCE($properties.approvedBy, v.approvedBy),
+          notes: COALESCE($properties.notes, v.notes)
+        },
+        v.dateIdentified = CASE
+          WHEN $properties.dateIdentified IS NULL THEN v.dateIdentified
+          ELSE datetime($properties.dateIdentified)
+        END,
+        v.dateNotified = CASE
+          WHEN $properties.dateNotified IS NULL THEN v.dateNotified
+          ELSE datetime($properties.dateNotified)
+        END,
+        v.approvedDate = CASE
+          WHEN $properties.approvedDate IS NULL THEN v.approvedDate
+          ELSE datetime($properties.approvedDate)
+        END,
+        v.updatedAt = datetime()
+    RETURN v
+  `,
+  deleteVariation: `
+    MATCH (v:Variation {projectId: $projectId, number: $number})
+    WHERE COALESCE(v.isDeleted, false) = false
+    SET v.isDeleted = true,
+        v.updatedAt = datetime()
     RETURN v
   `,
 };
@@ -1962,7 +2796,7 @@ export const VARIATION_QUERIES = {
  * Work Breakdown Structure node
  */
 export interface WBSNodeType {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   name: string;
   level: number;
@@ -2003,7 +2837,7 @@ export const WBSNodeMetadata: EntityMetadata = {
 };
 
 export const WBSNodeSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   name: z.string(),
   level: z.number(),
@@ -2013,12 +2847,12 @@ export const WBSNodeSchema = z.object({
 
 export const WBS_NODE_QUERIES = {
   getAll: `
-    MATCH (w:WBSNode {project_id: $projectId})
+    MATCH (w:WBSNode {projectId: $projectId})
     RETURN w
     ORDER BY w.code
   `,
   getByCode: `
-    MATCH (w:WBSNode {project_id: $projectId, code: $code})
+    MATCH (w:WBSNode {projectId: $projectId, code: $code})
     RETURN w
   `,
 };
@@ -2030,7 +2864,7 @@ export const WBS_NODE_QUERIES = {
  * Reference data for work types
  */
 export interface WorkTypeNode {
-  project_id: string;  // Foreign key to Project
+  projectId: string;  // Foreign key to Project
   code: string;
   description: string;
   metadata?: Record<string, any>;
@@ -2060,19 +2894,19 @@ export const WorkTypeMetadata: EntityMetadata = {
 };
 
 export const WorkTypeSchema = z.object({
-  project_id: z.string(),
+  projectId: z.string(),
   code: z.string(),
   description: z.string(),
 });
 
 export const WORK_TYPE_QUERIES = {
   getAll: `
-    MATCH (w:WorkType {project_id: $projectId})
+    MATCH (w:WorkType {projectId: $projectId})
     RETURN w
     ORDER BY w.code
   `,
   getByCode: `
-    MATCH (w:WorkType {project_id: $projectId, code: $code})
+    MATCH (w:WorkType {projectId: $projectId, code: $code})
     RETURN w
   `,
 };
