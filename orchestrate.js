@@ -7,6 +7,7 @@
  */
 
 const http = require('http');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { monitorSession } = require('./lib/monitor');
 
@@ -39,6 +40,94 @@ const TASKS = {
   // Wave 3: Needs PQP + WBS + Standards
   'itp-generation': { deps: ['pqp-generation', 'wbs-extraction', 'standards-extraction'], priority: 3 },
 };
+
+function collectTaskOrder(taskName, seen, order) {
+  if (seen.has(taskName)) return;
+  const task = TASKS[taskName];
+  if (!task) {
+    throw new Error(`Unknown task: ${taskName}`);
+  }
+  (task.deps || []).forEach((dep) => collectTaskOrder(dep, seen, order));
+  seen.add(taskName);
+  order.push(taskName);
+}
+
+function parseCliArgs() {
+  const args = process.argv.slice(2);
+  let projectId = process.env.PROJECT_ID || null;
+  let maxParallel = null;
+  let tasksArg = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--project-id' || arg === '--projectId') {
+      projectId = args[i + 1];
+      i++;
+    } else if (arg.startsWith('--project-id=')) {
+      projectId = arg.split('=')[1];
+    } else if (arg.startsWith('--projectId=')) {
+      projectId = arg.split('=')[1];
+    } else if (arg === '--max-parallel' || arg === '--maxParallel') {
+      maxParallel = args[i + 1];
+      i++;
+    } else if (arg.startsWith('--max-parallel=')) {
+      maxParallel = arg.split('=')[1];
+    } else if (arg.startsWith('--maxParallel=')) {
+      maxParallel = arg.split('=')[1];
+    } else if (arg === '--tasks') {
+      tasksArg = args[i + 1];
+      i++;
+    } else if (arg.startsWith('--tasks=')) {
+      tasksArg = arg.split('=')[1];
+    }
+  }
+
+  if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
+    console.error('\x1b[31m[ERROR]\x1b[0m Missing projectId. Provide via --project-id <uuid> or set PROJECT_ID env.');
+    process.exit(1);
+  }
+
+  let parsedMaxParallel = null;
+  if (maxParallel !== null && maxParallel !== undefined) {
+    const value = Number(maxParallel);
+    if (!Number.isFinite(value) || value < 1) {
+      console.error('\x1b[31m[ERROR]\x1b[0m Invalid --max-parallel value. Must be a positive integer.');
+      process.exit(1);
+    }
+    parsedMaxParallel = Math.floor(value);
+  }
+
+  let taskList = null;
+  let explicitTasks = null;
+  let addedDependencies = [];
+
+  if (typeof tasksArg === 'string' && tasksArg.trim().length > 0) {
+    const requested = tasksArg.split(',').map((t) => t.trim()).filter(Boolean);
+    if (requested.length === 0) {
+      console.error('\x1b[31m[ERROR]\x1b[0m --tasks provided but no valid task names found.');
+      process.exit(1);
+    }
+
+    const seen = new Set();
+    const order = [];
+    requested.forEach((taskName) => collectTaskOrder(taskName, seen, order));
+
+    explicitTasks = requested;
+    taskList = order;
+    addedDependencies = order.filter((task) => !requested.includes(task));
+  }
+
+  return {
+    projectId: projectId.trim(),
+    maxParallel: parsedMaxParallel,
+    tasks: taskList,
+    explicitTasks,
+    addedDependencies
+  };
+}
+
+const CLI_OPTIONS = parseCliArgs();
+const PROJECT_ID = CLI_OPTIONS.projectId;
 
 function log(msg, color = '') {
   const colors = { red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', cyan: '\x1b[36m', reset: '\x1b[0m' };
@@ -87,12 +176,14 @@ async function spawnWorkspace(taskName) {
   });
 }
 
-async function executeTask(taskName) {
+async function executeTask(taskName, projectId) {
   log(`Starting: ${taskName}`, 'cyan');
+  const taskStartedAt = new Date().toISOString();
   
   try {
     // 1. Spawn workspace (creates all files)
     const { sessionId, workspacePath } = await spawnWorkspace(taskName);
+    const workspaceSessionId = sessionId;
     log(`  Workspace: ${sessionId}`, 'blue');
     
     // 2. Create session
@@ -103,6 +194,20 @@ async function executeTask(taskName) {
     });
     
     log(`  Session: ${session.id}`, 'blue');
+
+    // 2b. Persist orchestrator metadata for downstream tools
+    const metadata = {
+      projectId,
+      taskName,
+      workspaceSessionId,
+      orchestratorSessionId: session.id,
+      workspacePath,
+      serverUrl: CONFIG.SERVER_URL,
+      startedAt: taskStartedAt
+    };
+    const metadataPath = `${workspacePath}/orchestrator-meta.json`;
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+    log(`  Metadata saved: orchestrator-meta.json`, 'blue');
     
     // 3. Start monitoring BEFORE sending prompt
     let lastProgress = '';
@@ -129,7 +234,12 @@ async function executeTask(taskName) {
     });
     
     // 4. Send prompt
-    const prompt = `cd ${workspacePath} && cat prompt.md and follow those instructions`;
+    const prompt = [
+      `projectId: ${projectId}`,
+      `workspaceSessionId: ${workspaceSessionId}`,
+      `orchestratorSessionId: ${session.id}`,
+      `cd ${workspacePath} && cat prompt.md and follow those instructions`
+    ].join('\n\n');
     
     await request(`${CONFIG.SERVER_URL}/session/${session.id}/message`, {
       method: 'POST',
@@ -152,9 +262,12 @@ async function executeTask(taskName) {
     return { 
       success: true, 
       sessionId: session.id, 
+      workspaceSessionId,
       workspacePath,
       duration: result.duration,
-      stats: result.stats
+      stats: result.stats,
+      metadataPath,
+      projectId
     };
     
   } catch (error) {
@@ -164,26 +277,37 @@ async function executeTask(taskName) {
 }
 
 class Orchestrator {
-  constructor() {
+  constructor(options) {
+    this.projectId = options.projectId;
+    this.maxParallel = options.maxParallel || CONFIG.MAX_PARALLEL;
+    this.explicitTasks = options.explicitTasks || null;
+    this.addedDependencies = options.addedDependencies || [];
+    this.taskList = (options.tasks && options.tasks.length > 0)
+      ? options.tasks
+      : Object.keys(TASKS);
     this.states = {};
     this.results = {};
     this.running = new Set();
     
-    Object.keys(TASKS).forEach(task => {
+    this.taskList.forEach((task) => {
       this.states[task] = 'pending';
     });
   }
   
   canRun(taskName) {
+    if (!Object.prototype.hasOwnProperty.call(this.states, taskName)) return false;
     if (this.states[taskName] !== 'pending') return false;
-    const deps = TASKS[taskName].deps;
-    return deps.every(dep => this.states[dep] === 'completed');
+    const deps = TASKS[taskName]?.deps || [];
+    return deps.every((dep) => {
+      if (!Object.prototype.hasOwnProperty.call(this.states, dep)) {
+        return true;
+      }
+      return this.states[dep] === 'completed';
+    });
   }
   
   getReadyTasks() {
-    return Object.keys(TASKS)
-      .filter(task => this.canRun(task))
-      .sort((a, b) => TASKS[a].priority - TASKS[b].priority);
+    return this.taskList.filter((task) => this.canRun(task));
   }
   
   async runTask(taskName) {
@@ -191,7 +315,7 @@ class Orchestrator {
     this.running.add(taskName);
     
     try {
-      const result = await executeTask(taskName);
+      const result = await executeTask(taskName, this.projectId);
       this.states[taskName] = 'completed';
       this.results[taskName] = result;
       log(`✓ ${taskName}`, 'green');
@@ -209,10 +333,20 @@ class Orchestrator {
     log('║          OpenCode Agent Orchestrator                           ║', 'cyan');
     log('╚════════════════════════════════════════════════════════════════╝\n', 'cyan');
     
+    log(`Project ID: ${this.projectId}`, 'cyan');
+    log(`Max Parallel: ${this.maxParallel}`, 'cyan');
+    if (this.explicitTasks && this.explicitTasks.length > 0) {
+      log(`Requested Tasks: ${this.explicitTasks.join(', ')}`, 'cyan');
+    }
+    if (this.addedDependencies.length > 0) {
+      log(`Added Dependencies: ${this.addedDependencies.join(', ')}`, 'cyan');
+    }
     log('Tasks:', 'cyan');
-    Object.entries(TASKS).forEach(([name, task]) => {
-      const deps = task.deps.length > 0 ? ` (needs: ${task.deps.join(', ')})` : '';
-      log(`  ${task.priority}. ${name}${deps}`, 'blue');
+    this.taskList.forEach((name) => {
+      const task = TASKS[name];
+      const deps = (task?.deps?.length > 0) ? ` (needs: ${task.deps.join(', ')})` : '';
+      const priority = task?.priority ?? '?';
+      log(`  ${priority}. ${name}${deps}`, 'blue');
     });
     log('');
     
@@ -227,7 +361,7 @@ class Orchestrator {
       
       // Start new tasks up to max parallel
       for (const task of readyTasks) {
-        if (this.running.size >= CONFIG.MAX_PARALLEL) break;
+        if (this.running.size >= this.maxParallel) break;
         this.runTask(task); // Don't await - run in parallel
       }
       
@@ -236,15 +370,15 @@ class Orchestrator {
     
     // Report
     const duration = (Date.now() - startTime) / 1000;
-    const completed = Object.values(this.states).filter(s => s === 'completed').length;
-    const failed = Object.values(this.states).filter(s => s === 'failed').length;
+    const completed = this.taskList.filter((task) => this.states[task] === 'completed').length;
+    const failed = this.taskList.filter((task) => this.states[task] === 'failed').length;
     
     log('\n╔════════════════════════════════════════════════════════════════╗', 'cyan');
     log('║          Complete                                              ║', 'cyan');
     log('╚════════════════════════════════════════════════════════════════╝\n', 'cyan');
     
     log(`Duration: ${duration.toFixed(1)}s`, 'cyan');
-    log(`Completed: ${completed}/${Object.keys(TASKS).length}`, completed === Object.keys(TASKS).length ? 'green' : 'yellow');
+    log(`Completed: ${completed}/${this.taskList.length}`, completed === this.taskList.length ? 'green' : 'yellow');
     log(`Failed: ${failed}`, failed > 0 ? 'red' : 'green');
     log('');
     
@@ -253,7 +387,8 @@ class Orchestrator {
     let totalBash = 0;
     let totalFiles = 0;
     
-    Object.entries(this.states).forEach(([name, state]) => {
+    this.taskList.forEach((name) => {
+      const state = this.states[name];
       const symbol = state === 'completed' ? '✓' : state === 'failed' ? '✗' : '⋯';
       const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : 'yellow';
       const result = this.results[name];
@@ -262,9 +397,17 @@ class Orchestrator {
         totalTools += result.stats.toolCount || 0;
         totalBash += result.stats.bashCount || 0;
         totalFiles += result.stats.fileOps || 0;
-        log(`  ${symbol} ${name} (${result.duration}s) - Tools: ${result.stats.toolCount}, Bash: ${result.stats.bashCount}, Files: ${result.stats.fileOps}`, color);
+        const sessionInfo = result.sessionId ? `Session: ${result.sessionId}` : 'Session: n/a';
+        const workspaceInfo = result.workspaceSessionId ? `Workspace: ${result.workspaceSessionId}` : '';
+        const metadataInfo = result.metadataPath ? `Metadata: ${result.metadataPath}` : '';
+        const detailParts = [`Duration: ${result.duration}s`, sessionInfo];
+        if (workspaceInfo) detailParts.push(workspaceInfo);
+        if (metadataInfo) detailParts.push(metadataInfo);
+        detailParts.push(`Tools: ${result.stats.toolCount}`, `Bash: ${result.stats.bashCount}`, `Files: ${result.stats.fileOps}`);
+        log(`  ${symbol} ${name} - ${detailParts.join(' | ')}`, color);
       } else {
-        log(`  ${symbol} ${name}: ${state}`, color);
+        const sessionInfo = result?.sessionId ? ` (session ${result.sessionId})` : '';
+        log(`  ${symbol} ${name}: ${state}${sessionInfo}`, color);
       }
       
       if (result?.error) {
@@ -284,7 +427,13 @@ class Orchestrator {
 
 // Run
 if (require.main === module) {
-  new Orchestrator().run().catch(err => {
+  new Orchestrator({
+    projectId: PROJECT_ID,
+    maxParallel: CLI_OPTIONS.maxParallel,
+    tasks: CLI_OPTIONS.tasks,
+    explicitTasks: CLI_OPTIONS.explicitTasks,
+    addedDependencies: CLI_OPTIONS.addedDependencies
+  }).run().catch(err => {
     log(`Fatal: ${err.message}`, 'red');
     process.exit(1);
   });

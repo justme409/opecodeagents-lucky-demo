@@ -26,7 +26,132 @@ if (!task) {
 const schemaPath = path.join(__dirname, 'schemas/neo4j/master-schema.ts');
 const content = fs.readFileSync(schemaPath, 'utf8');
 
-// Extract entity definitions for this agent's entities
+const BUSINESS_KEY_DATA = {
+  AreaCode: { description: 'projectId + code', props: ['code'] },
+  Document: { description: 'projectId + documentNumber + revisionCode', props: ['documentNumber', 'revisionCode'] },
+  InspectionPoint: { description: 'projectId + parentType + parentKey + sequence', props: ['parentType', 'parentKey', 'sequence'] },
+  ITPInstance: { description: 'projectId + templateDocNo + lotNumber', props: ['templateDocNo', 'lotNumber'] },
+  ITPTemplate: { description: 'projectId + docNo', props: ['docNo'] },
+  Laboratory: { description: 'projectId + code', props: ['code'] },
+  LBSNode: { description: 'projectId + code', props: ['code'] },
+  Lot: { description: 'projectId + number', props: ['number'] },
+  ManagementPlan: { description: 'projectId + type + title + version', props: ['type', 'title', 'version'] },
+  Material: { description: 'projectId + code', props: ['code'] },
+  MixDesign: { description: 'projectId + code', props: ['code'] },
+  NCR: { description: 'projectId + number', props: ['number'] },
+  Photo: { description: 'projectId + url', props: ['url'] },
+  ProgressClaim: { description: 'projectId + number', props: ['number'] },
+  Project: { description: 'projectId (unique)', props: ['projectName'] },
+  Quantity: { description: 'projectId + lotNumber + scheduleItemNumber', props: ['lotNumber', 'scheduleItemNumber'] },
+  Sample: { description: 'projectId + number', props: ['number'] },
+  ScheduleItem: { description: 'projectId + number', props: ['number'] },
+  Standard: { description: 'projectId + code', props: ['code'] },
+  Supplier: { description: 'projectId + code', props: ['code'] },
+  TestMethod: { description: 'projectId + code', props: ['code'] },
+  TestRequest: { description: 'projectId + number', props: ['number'] },
+  User: { description: 'email (unique)', props: ['email'] },
+  Variation: { description: 'projectId + number', props: ['number'] },
+  WBSNode: { description: 'projectId + code', props: ['code'] },
+  WorkType: { description: 'projectId + code', props: ['code'] },
+};
+
+function extractInterface(entityName) {
+  const search = `export interface ${entityName}Node`;
+  const interfaceStart = content.indexOf(search);
+  if (interfaceStart === -1) {
+    return null;
+  }
+
+  const braceStart = content.indexOf('{', interfaceStart);
+  if (braceStart === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let index = braceStart;
+  while (index < content.length) {
+    const char = content[index];
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const snippet = content.slice(interfaceStart, index + 1);
+        return snippet.replace(/^export\s+/, '').trim();
+      }
+    }
+    index += 1;
+  }
+
+  return null;
+}
+
+function formatBusinessKey(entityName) {
+  const data = BUSINESS_KEY_DATA[entityName];
+  if (data) {
+    return data.description;
+  }
+  return 'projectId + code';
+}
+
+function getKeyProps(entityName) {
+  const data = BUSINESS_KEY_DATA[entityName];
+  if (data) {
+    return data.props;
+  }
+  return ['code'];
+}
+
+function buildEntityDefinition(entityName) {
+  const interfaceText = extractInterface(entityName);
+  if (!interfaceText) {
+    return `### ${entityName}\n\n*Definition not found*\n`;
+  }
+
+  return `### ${entityName}
+
+\`\`\`typescript
+${interfaceText}
+\`\`\`
+`;
+}
+
+function buildDatabaseSample(entityName) {
+  if (entityName === 'User') {
+    return `CREATE (n:User {
+  email: $email,
+  userId: $userId,
+  name: $name,
+  role: $role,
+  organizationId: $organizationId,
+  createdAt: datetime(),
+  updatedAt: datetime()
+})`;
+  }
+
+  const keyProps = getKeyProps(entityName);
+  const propLines = keyProps
+    .map(prop => `  ${prop}: $${prop},`)
+    .join('\n');
+
+  const bodyLines = [
+    '  projectId: $projectId,'
+  ];
+
+  if (propLines) {
+    bodyLines.push(propLines);
+  }
+
+  bodyLines.push('  createdAt: datetime(),');
+  bodyLines.push('  updatedAt: datetime()');
+
+  return `CREATE (n:${entityName} {
+${bodyLines.join('\n')}
+})`;
+}
+
+const primaryEntity = task.entities[0];
+
 const output = `# Agent Schema: ${task.agent_id}
 
 **Task:** ${taskName}  
@@ -40,55 +165,11 @@ ${task.entities.map(e => `- **${e}**`).join('\n')}
 
 ## Entity Definitions
 
-${task.entities.map(entityName => {
-  // Extract the interface definition
-  const interfaceRegex = new RegExp(`export interface ${entityName}Node \\{([^}]+)\\}`, 's');
-  const match = content.match(interfaceRegex);
-  
-  if (!match) return `### ${entityName}\n\n*Definition not found*\n`;
-  
-  const props = match[1]
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('//'));
-  
-  return `### ${entityName}
-
-\`\`\`typescript
-interface ${entityName}Node {
-${props.map(p => `  ${p}`).join('\n')}
-}
-\`\`\`
-`;
-}).join('\n')}
+${task.entities.map(buildEntityDefinition).join('\n')}
 
 ## Business Keys
 
-${task.entities.map(e => {
-  const keyMap = {
-    'Project': 'projectId (unique)',
-    'ITPTemplate': 'projectId + docNo',
-    'InspectionPoint': 'projectId + parentType + parentKey + sequence',
-    'Standard': 'projectId + code',
-    'WorkType': 'projectId + code',
-    'AreaCode': 'projectId + code',
-    'WBSNode': 'projectId + code',
-    'LBSNode': 'projectId + code',
-    'ManagementPlan': 'projectId + type + title + version',
-    'Document': 'projectId + documentNumber + revisionCode',
-    'Material': 'projectId + code',
-    'MixDesign': 'projectId + code',
-    'TestMethod': 'projectId + code',
-    'Sample': 'projectId + number',
-    'TestRequest': 'projectId + number',
-    'NCR': 'projectId + number',
-    'Lot': 'projectId + number',
-    'User': 'email (unique)',
-    'Laboratory': 'projectId + code',
-    'Supplier': 'projectId + code',
-  };
-  return `- **${e}**: ${keyMap[e] || 'projectId + code'}`;
-}).join('\n')}
+${task.entities.map(e => `- **${e}**: ${formatBusinessKey(e)}`).join('\n')}
 
 ## Output Format
 
@@ -104,7 +185,7 @@ ${task.entities.map(e => `  "${e}": ${e === 'Project' ? '{...}' : '[...]'}`).joi
 
 Before finishing, ensure:
 
-- [ ] All entities include \`projectId\` field
+- [ ] All entities include \`projectId\` field${task.entities.includes('User') ? ' (except User)' : ''}
 - [ ] Business keys are set correctly (NO UUIDs!)
 - [ ] All required properties are present
 - [ ] Relationships reference valid business keys
@@ -117,19 +198,14 @@ Write to Generated DB (port 7690):
 
 \`\`\`cypher
 // Create node with business key
-CREATE (n:${task.entities[0]} {
-  projectId: $projectId,
-  ${task.entities[0] === 'Project' ? 'name' : 'code'}: $${task.entities[0] === 'Project' ? 'name' : 'code'},
-  createdAt: datetime(),
-  updatedAt: datetime()
-})
+${buildDatabaseSample(primaryEntity)}
 RETURN n
 \`\`\`
 
 ## Important Rules
 
 1. **NO UUIDs** - Use business keys only
-2. **projectId Required** - All entities need this
+2. **projectId Required** - All entities need this${task.entities.includes('User') ? ' (User sync handled separately)' : ''}
 3. **Follow Schema Exactly** - Match property names and types
 4. **Create Relationships** - Link to project and other entities
 5. **Validate Output** - Check against schema before finishing

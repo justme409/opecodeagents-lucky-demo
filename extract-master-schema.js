@@ -12,19 +12,49 @@ const path = require('path');
 const schemaPath = path.join(__dirname, 'schemas/neo4j/master-schema.ts');
 const content = fs.readFileSync(schemaPath, 'utf8');
 
-// Extract all entity interfaces
-const entityRegex = /export interface (\w+Node) \{([^}]+)\}/gs;
+function extractInterface(startIndex) {
+  const braceStart = content.indexOf('{', startIndex);
+  if (braceStart === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let index = braceStart;
+  while (index < content.length) {
+    const char = content[index];
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          body: content.slice(braceStart + 1, index),
+          endIndex: index + 1,
+        };
+      }
+    }
+    index += 1;
+  }
+
+  return null;
+}
+
+const interfaceRegex = /export interface (\w+)Node/g;
 const entities = [];
 let match;
 
-while ((match = entityRegex.exec(content)) !== null) {
+while ((match = interfaceRegex.exec(content)) !== null) {
   const name = match[1].replace('Node', '');
-  const props = match[2]
+  const interfaceData = extractInterface(match.index);
+  if (!interfaceData) {
+    continue;
+  }
+
+  const props = interfaceData.body
     .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('//'))
-    .map(line => line.replace(/;$/, ''));
-  
+    .map(line => line.replace(/\s+$/, ''))
+    .filter(line => line.trim().length > 0);
+
   entities.push({ name, properties: props });
 }
 
@@ -44,7 +74,8 @@ entities.forEach(({ name, properties }) => {
   output += '```typescript\n';
   output += `interface ${name}Node {\n`;
   properties.forEach(prop => {
-    output += `  ${prop}\n`;
+    const formatted = prop.startsWith(' ') ? prop : `  ${prop}`;
+    output += `${formatted}\n`;
   });
   output += '}\n```\n\n';
 });
@@ -57,32 +88,32 @@ All entities use \`projectId\` for multi-tenancy plus a natural business key:
 |--------|-------------|
 ${entities.map(e => {
   const keyMap = {
-    'Project': '`projectId` (unique)',
-    'ITPTemplate': '`projectId` + `docNo`',
-    'InspectionPoint': '`projectId` + `parentType` + `parentKey` + `sequence`',
-    'Standard': '`projectId` + `code`',
-    'WorkType': '`projectId` + `code`',
-    'AreaCode': '`projectId` + `code`',
-    'WBSNode': '`projectId` + `code`',
-    'LBSNode': '`projectId` + `code`',
-    'ManagementPlan': '`projectId` + `type` + `title` + `version`',
-    'Document': '`projectId` + `documentNumber` + `revisionCode`',
-    'Material': '`projectId` + `code`',
-    'MixDesign': '`projectId` + `code`',
-    'TestMethod': '`projectId` + `code`',
-    'Sample': '`projectId` + `number`',
-    'TestRequest': '`projectId` + `number`',
-    'NCR': '`projectId` + `number`',
-    'Lot': '`projectId` + `number`',
-    'User': '`email` (unique)',
-    'Laboratory': '`projectId` + `code`',
-    'Supplier': '`projectId` + `code`',
-    'Variation': '`projectId` + `number`',
-    'ProgressClaim': '`projectId` + `number`',
-    'Quantity': '`projectId` + `lotNumber` + `scheduleItemNumber`',
-    'ScheduleItem': '`projectId` + `number`',
-    'Photo': '`projectId` + `fileUrl`',
-    'ITPInstance': '`projectId` + `templateDocNo` + `lotNumber`',
+    AreaCode: '`projectId` + `code`',
+    Document: '`projectId` + `documentNumber` + `revisionCode`',
+    InspectionPoint: '`projectId` + `parentType` + `parentKey` + `sequence`',
+    ITPInstance: '`projectId` + `templateDocNo` + `lotNumber`',
+    ITPTemplate: '`projectId` + `docNo`',
+    Laboratory: '`projectId` + `code`',
+    LBSNode: '`projectId` + `code`',
+    Lot: '`projectId` + `number`',
+    ManagementPlan: '`projectId` + `type` + `title` + `version`',
+    Material: '`projectId` + `code`',
+    MixDesign: '`projectId` + `code`',
+    NCR: '`projectId` + `number`',
+    Photo: '`projectId` + `url`',
+    ProgressClaim: '`projectId` + `number`',
+    Project: '`projectId` (unique)',
+    Quantity: '`projectId` + `lotNumber` + `scheduleItemNumber`',
+    Sample: '`projectId` + `number`',
+    ScheduleItem: '`projectId` + `number`',
+    Standard: '`projectId` + `code`',
+    Supplier: '`projectId` + `code`',
+    TestMethod: '`projectId` + `code`',
+    TestRequest: '`projectId` + `number`',
+    User: '`email` (unique)',
+    Variation: '`projectId` + `number`',
+    WBSNode: '`projectId` + `code`',
+    WorkType: '`projectId` + `code`',
   };
   return `| **${e.name}** | ${keyMap[e.name] || '`projectId` + `code`'} |`;
 }).join('\n')}
