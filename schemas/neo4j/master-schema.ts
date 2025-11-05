@@ -55,6 +55,7 @@ export interface AreaCodeNode {
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const AreaCodeMetadata: EntityMetadata = {
@@ -79,26 +80,63 @@ export const AreaCodeSchema = z.object({
   projectId: z.string(),
   code: z.string(),
   description: z.string(),
+  metadata: z.record(z.any()).optional(),
 });
 
+export const CreateAreaCodeInputSchema = z.object({
+  code: z.string(),
+  description: z.string(),
+  metadata: z.record(z.any()).optional(),
+});
+
+export type CreateAreaCodeInput = z.infer<typeof CreateAreaCodeInputSchema>;
+
+export const UpdateAreaCodeInputSchema = z.object({
+  description: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+});
+
+export type UpdateAreaCodeInput = z.infer<typeof UpdateAreaCodeInputSchema>;
+
 export const AREA_CODE_QUERIES = {
-  getAll: `
+  getAllAreaCodes: `
     MATCH (a:AreaCode {projectId: $projectId})
+    WHERE COALESCE(a.isDeleted, false) = false
     RETURN a
     ORDER BY a.code
   `,
-  getByCode: `
+  getAreaCodeByCode: `
     MATCH (a:AreaCode {projectId: $projectId, code: $code})
+    WHERE COALESCE(a.isDeleted, false) = false
     RETURN a
   `,
-  create: `
+  createAreaCode: `
+    MATCH (p:Project {projectId: $projectId})
     CREATE (a:AreaCode {
       projectId: $projectId,
-      code: $code,
-      description: $description,
+      code: $properties.code,
+      description: $properties.description,
+      metadata: COALESCE($properties.metadata, {}),
       createdAt: datetime(),
-      updatedAt: datetime()
+      updatedAt: datetime(),
+      isDeleted: false
     })
+    MERGE (a)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN a
+  `,
+  updateAreaCode: `
+    MATCH (a:AreaCode {projectId: $projectId, code: $code})
+    WHERE COALESCE(a.isDeleted, false) = false
+    SET a.description = COALESCE($properties.description, a.description),
+        a.metadata = COALESCE($properties.metadata, a.metadata),
+        a.updatedAt = datetime()
+    RETURN a
+  `,
+  deleteAreaCode: `
+    MATCH (a:AreaCode {projectId: $projectId, code: $code})
+    WHERE COALESCE(a.isDeleted, false) = false
+    SET a.isDeleted = true,
+        a.updatedAt = datetime()
     RETURN a
   `,
 };
@@ -2195,6 +2233,7 @@ export interface StandardNode {
   url?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const StandardMetadata: EntityMetadata = {
@@ -2224,13 +2263,72 @@ export const StandardSchema = z.object({
   title: z.string(),
   version: z.string().optional(),
   authority: z.string().optional(),
+  url: z.string().optional(),
 });
 
+export const CreateStandardInputSchema = z.object({
+  code: z.string(),
+  title: z.string(),
+  version: z.string().optional(),
+  authority: z.string().optional(),
+  url: z.string().optional(),
+});
+
+export type CreateStandardInput = z.infer<typeof CreateStandardInputSchema>;
+
+export const UpdateStandardInputSchema = z.object({
+  title: z.string().optional(),
+  version: z.string().optional(),
+  authority: z.string().optional(),
+  url: z.string().optional(),
+});
+
+export type UpdateStandardInput = z.infer<typeof UpdateStandardInputSchema>;
+
 export const STANDARD_QUERIES = {
-  getAll: `
+  getAllStandards: `
     MATCH (s:Standard {projectId: $projectId})
+    WHERE COALESCE(s.isDeleted, false) = false
     RETURN s
     ORDER BY s.code
+  `,
+  getStandardByCode: `
+    MATCH (s:Standard {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    RETURN s
+  `,
+  createStandard: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (s:Standard {
+      projectId: $projectId,
+      code: $properties.code,
+      title: $properties.title,
+      version: $properties.version,
+      authority: $properties.authority,
+      url: $properties.url,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (s)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN s
+  `,
+  updateStandard: `
+    MATCH (s:Standard {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s.title = COALESCE($properties.title, s.title),
+        s.version = COALESCE($properties.version, s.version),
+        s.authority = COALESCE($properties.authority, s.authority),
+        s.url = COALESCE($properties.url, s.url),
+        s.updatedAt = datetime()
+    RETURN s
+  `,
+  deleteStandard: `
+    MATCH (s:Standard {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s.isDeleted = true,
+        s.updatedAt = datetime()
+    RETURN s
   `,
 };
 
@@ -2251,6 +2349,7 @@ export interface SupplierNode {
   supplierType?: 'material' | 'equipment' | 'service';
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const SupplierMetadata: EntityMetadata = {
@@ -2275,14 +2374,79 @@ export const SupplierSchema = z.object({
   projectId: z.string(),
   code: z.string(),
   name: z.string(),
+  abn: z.string().optional(),
   contactEmail: z.string().optional(),
+  contactPhone: z.string().optional(),
+  address: z.string().optional(),
+  supplierType: z.enum(['material', 'equipment', 'service']).optional(),
 });
 
+export const CreateSupplierInputSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  abn: z.string().optional(),
+  contactEmail: z.string().optional(),
+  contactPhone: z.string().optional(),
+  address: z.string().optional(),
+  supplierType: z.enum(['material', 'equipment', 'service']).optional(),
+});
+
+export type CreateSupplierInput = z.infer<typeof CreateSupplierInputSchema>;
+
+export const UpdateSupplierInputSchema = z.object({
+  name: z.string().optional(),
+  abn: z.string().optional(),
+  contactEmail: z.string().optional(),
+  contactPhone: z.string().optional(),
+  address: z.string().optional(),
+  supplierType: z.enum(['material', 'equipment', 'service']).optional(),
+});
+
+export type UpdateSupplierInput = z.infer<typeof UpdateSupplierInputSchema>;
+
 export const SUPPLIER_QUERIES = {
-  getAll: `
+  getAllSuppliers: `
     MATCH (s:Supplier {projectId: $projectId})
+    WHERE COALESCE(s.isDeleted, false) = false
     RETURN s
     ORDER BY s.name
+  `,
+  getSupplierByCode: `
+    MATCH (s:Supplier {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    RETURN s
+  `,
+  createSupplier: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (s:Supplier {
+      projectId: $projectId,
+      code: $properties.code,
+      name: $properties.name,
+      abn: $properties.abn,
+      contactEmail: $properties.contactEmail,
+      contactPhone: $properties.contactPhone,
+      address: $properties.address,
+      supplierType: $properties.supplierType,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (s)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN s
+  `,
+  updateSupplier: `
+    MATCH (s:Supplier {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s += $properties,
+        s.updatedAt = datetime()
+    RETURN s
+  `,
+  deleteSupplier: `
+    MATCH (s:Supplier {projectId: $projectId, code: $code})
+    WHERE COALESCE(s.isDeleted, false) = false
+    SET s.isDeleted = true,
+        s.updatedAt = datetime()
+    RETURN s
   `,
 };
 
@@ -2870,6 +3034,7 @@ export interface WorkTypeNode {
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const WorkTypeMetadata: EntityMetadata = {
@@ -2897,16 +3062,63 @@ export const WorkTypeSchema = z.object({
   projectId: z.string(),
   code: z.string(),
   description: z.string(),
+  metadata: z.record(z.any()).optional(),
 });
 
+export const CreateWorkTypeInputSchema = z.object({
+  code: z.string(),
+  description: z.string(),
+  metadata: z.record(z.any()).optional(),
+});
+
+export type CreateWorkTypeInput = z.infer<typeof CreateWorkTypeInputSchema>;
+
+export const UpdateWorkTypeInputSchema = z.object({
+  description: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+});
+
+export type UpdateWorkTypeInput = z.infer<typeof UpdateWorkTypeInputSchema>;
+
 export const WORK_TYPE_QUERIES = {
-  getAll: `
+  getAllWorkTypes: `
     MATCH (w:WorkType {projectId: $projectId})
+    WHERE COALESCE(w.isDeleted, false) = false
     RETURN w
     ORDER BY w.code
   `,
-  getByCode: `
+  getWorkTypeByCode: `
     MATCH (w:WorkType {projectId: $projectId, code: $code})
+    WHERE COALESCE(w.isDeleted, false) = false
+    RETURN w
+  `,
+  createWorkType: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (w:WorkType {
+      projectId: $projectId,
+      code: $properties.code,
+      description: $properties.description,
+      metadata: COALESCE($properties.metadata, {}),
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (w)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN w
+  `,
+  updateWorkType: `
+    MATCH (w:WorkType {projectId: $projectId, code: $code})
+    WHERE COALESCE(w.isDeleted, false) = false
+    SET w.description = COALESCE($properties.description, w.description),
+        w.metadata = COALESCE($properties.metadata, w.metadata),
+        w.updatedAt = datetime()
+    RETURN w
+  `,
+  deleteWorkType: `
+    MATCH (w:WorkType {projectId: $projectId, code: $code})
+    WHERE COALESCE(w.isDeleted, false) = false
+    SET w.isDeleted = true,
+        w.updatedAt = datetime()
     RETURN w
   `,
 };
