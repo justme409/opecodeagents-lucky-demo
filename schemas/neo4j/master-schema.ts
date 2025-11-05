@@ -1047,6 +1047,11 @@ export const MANAGEMENT_PLAN_QUERIES = {
     RETURN m
     ORDER BY m.type, m.version DESC
   `,
+  getPlanById: `
+    MATCH (m:ManagementPlan {projectId: $projectId})
+    WHERE id(m) = toInteger($planId) OR elementId(m) = $planId
+    RETURN m
+  `,
   getPlanByType: `
     MATCH (m:ManagementPlan {projectId: $projectId, type: $type})
     WHERE COALESCE(m.isDeleted, false) = false
