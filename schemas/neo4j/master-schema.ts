@@ -519,6 +519,7 @@ export interface ITPTemplateNode {
   description: string;
   workType: string;
   specRef: string;
+  parentSpec?: string;
   jurisdiction?: JurisdictionValue;
   agency?: string;
   applicableStandards?: string[];
@@ -566,6 +567,7 @@ export const ITPTemplateSchema = z.object({
   description: z.string(),
   workType: z.string(),
   specRef: z.string(),
+  parentSpec: z.string().optional(),
   jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
   agency: z.string().optional(),
   applicableStandards: z.array(z.string()).optional(),
@@ -584,6 +586,7 @@ export const CreateITPTemplateInputSchema = z.object({
   description: z.string(),
   workType: z.string(),
   specRef: z.string(),
+  parentSpec: z.string().optional(),
   jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
   agency: z.string().optional(),
   applicableStandards: z.array(z.string()).optional(),

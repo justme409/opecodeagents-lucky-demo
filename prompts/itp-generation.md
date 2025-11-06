@@ -145,6 +145,15 @@ When matching standards:
 
 - Use camelCase consistently throughout
 
+## Template Naming and Status Requirements
+
+- `docNo` must follow the format `TEMPLATE-ITP-<ABBREVIATION>`, where `<ABBREVIATION>` is a short uppercase code (3–5 letters) representing the primary scope (e.g., `PAV` for pavement, `BR` for bridge, `KERB` for kerbing). Do **not** use sequential numbering like `ITP-001`.
+- `description` must be a concise Title Case statement of the scope without “ITP” in the text (e.g., `Earthworks & Sub-Grade Construction`). Use `scopeOfWork` for extended detail.
+- Populate `parentSpec` with the primary source specification title or identifier that governs the template (e.g., `DIT Standard Specification Part 4 Pavement Works`).
+- All newly generated templates must be written with `status: "draft"` and `approvalStatus: "pending"`. Leave `approvedBy` and `approvedDate` unset until a human reviewer approves the template.
+- Section names should be returned in Title Case (e.g., `Preliminaries`, `Materials`).
+- Inspection point `sequence` values must increment monotonically across the entire template. Do not restart numbering per section; every inspection point must have a unique sequence.
+
 ## Output Format
 
 **CRITICAL: Node Label and Field Names**
