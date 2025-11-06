@@ -108,6 +108,8 @@ Different Australian jurisdictions have specific quality system requirements:
 - Witness point procedures
 - Testing frequencies
 - NATA requirements
+- **Required ITP summary for database** - For every ITP referenced in the PQP, capture sufficient metadata (docNo, workType, specRef, mandatory flag) so it can be written to the ManagementPlan `requiredItps` array.
+- **Non-negotiable:** The `requiredItps` array must never be empty. Exhaust every project source (drawings, specifications, schedules, WBS/lot requirements). If the contract genuinely omits ITP references, synthesize an evidence-based list using best practice and flag each item with `source: "assumed"` inside `additionalNotes`.
 
 ### Sampling and Testing
 - Test method references
@@ -138,6 +140,7 @@ When extracting lists of ITPs (Inspection and Test Plans):
 - Do not leave any out
 - Preserve the original structure and content as provided
 - Include all hold points and witness points as specified
+- **Cross-check:** Reconcile the extracted list against WBS requirements, lot registers, and testing schedules to ensure no ITP is overlooked.
 
 ## QSE System Integration
 
@@ -176,7 +179,7 @@ For each relevant topic include:
 
 Provide matrices/tables where suitable:
 - RACI (Responsible, Accountable, Consulted, Informed)
-- ITP register
+- ITP register (with doc number, status, work type, spec reference, mandatory/optional flag)
 - Materials register
 - Testing schedule with frequencies
 - Hold point register
@@ -200,31 +203,47 @@ You are tasked with generating a comprehensive PQP based on project documentatio
    - ITP lists and requirements
    - Testing requirements
 
-2. **Query the Standards Database** (port 7687) to understand:
+3. **Query the Standards Database** (port 7687) to understand:
    - Jurisdiction-specific quality requirements
    - Applicable Australian Standards
    - Test method standards
 
-3. **Analyze documentation** to determine:
+4. **Analyze documentation** to determine:
    - Project-specific quality requirements
    - ITP requirements
    - Materials approval requirements
    - Testing frequencies
    - Hold and witness points
 
-4. **Structure the PQP** according to jurisdictional template:
+5. **Catalogue every required ITP before drafting content**
+   - Build a master list from all sources (contract quality sections, schedules, WBS requirements, testing matrices, appendices).
+   - For each ITP capture: `docNo`, `title/description`, `workType`, `specRef`, `mandatory` (true if contractually required or contains hold points).
+   - Record provenance in `additionalNotes` (e.g., clause references, document IDs, or note "assumed" with reasoning).
+   - Do not proceed to the narrative sections until the list is complete.
+
+6. **Structure the PQP** according to jurisdictional template:
    - Use QLD template for Queensland projects
    - Use SA template for South Australia projects
    - Use VIC template for Victoria projects
    - Use NSW template for New South Wales projects
    - Use Generic template if no specific jurisdiction applies
 
-5. **Integrate corporate QSE content** by:
+7. **Integrate corporate QSE content** by:
    - Referencing existing corporate procedures
    - Creating project-specific content where gaps exist
    - Maintaining links to QSE system items
 
-6. **Write output** to the **Generated Database** (port 7690)
+8. **Write output** to the **Generated Database** (port 7690)
+
+9. **Persist required ITP metadata**
+   - Build the `requiredItps` array on the ManagementPlan node. Each entry must include:
+     - `docNo` - Exact ITP document number referenced in the PQP or source documents
+     - `workType` - Work type or discipline the ITP covers
+     - `mandatory` - `true` if the ITP is contractually required/has hold points; otherwise `false` (explicitly set `false` instead of omitting the property)
+     - `specRef` - Specification or clause reference if available
+     - `additionalNotes` - Source citations or "assumed" rationale when you had to infer the requirement
+   - Keep a 1:1 mapping with the ITP register presented in the PQP. The database array and the register in the document must match exactly (same order, same content).
+   - If you cannot verify any ITPs after exhaustive searching, escalate by creating a best-practice inferred list with clear assumptions—never leave the array empty.
 
 ## Naming Convention
 

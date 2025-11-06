@@ -10,6 +10,7 @@ const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { monitorSession } = require('./lib/monitor');
+const neo4j = require('neo4j-driver');
 
 const CONFIG = {
   SERVER_URL: 'http://127.0.0.1:4096',
@@ -22,23 +23,28 @@ const CONFIG = {
   }
 };
 
+const NEO4J_CONFIG = {
+  uri: process.env.NEO4J_URI,
+  user: process.env.NEO4J_USER,
+  password: process.env.NEO4J_PASSWORD,
+};
+
 // Task definitions with dependencies
 const TASKS = {
   // Wave 1: Independent
   'project-details': { deps: [], priority: 1 },
   'document-metadata': { deps: [], priority: 1 },
-  'standards-extraction': { deps: [], priority: 1 },
-  'wbs-extraction': { deps: [], priority: 1 },
+  'wbs-extraction': { deps: ['pqp-generation'], priority: 2 },
   'pqp-generation': { deps: [], priority: 1 },
   'emp-generation': { deps: [], priority: 1 },
   'ohsmp-generation': { deps: [], priority: 1 },
   'qse-generation': { deps: [], priority: 1 },
   
   // Wave 2: Needs WBS
-  'lbs-extraction': { deps: ['wbs-extraction'], priority: 2 },
+  'lbs-extraction': { deps: ['wbs-extraction'], priority: 3 },
   
-  // Wave 3: Needs PQP + WBS + Standards
-  'itp-generation': { deps: ['pqp-generation', 'wbs-extraction', 'standards-extraction'], priority: 3 },
+  // Wave 3: Needs PQP + WBS
+  'itp-generation': { deps: ['pqp-generation', 'wbs-extraction'], priority: 4 },
 };
 
 function collectTaskOrder(taskName, seen, order) {
@@ -129,6 +135,97 @@ function parseCliArgs() {
 const CLI_OPTIONS = parseCliArgs();
 const PROJECT_ID = CLI_OPTIONS.projectId;
 
+let neo4jDriver = null;
+
+function ensureNeo4jConfig() {
+  if (!NEO4J_CONFIG.uri || !NEO4J_CONFIG.user || !NEO4J_CONFIG.password) {
+    throw new Error('Missing Neo4j connection configuration. Set NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD env vars.');
+  }
+}
+
+function getNeo4jDriver() {
+  ensureNeo4jConfig();
+  if (!neo4jDriver) {
+    neo4jDriver = neo4j.driver(
+      NEO4J_CONFIG.uri,
+      neo4j.auth.basic(NEO4J_CONFIG.user, NEO4J_CONFIG.password),
+      { disableLosslessIntegers: true }
+    );
+  }
+  return neo4jDriver;
+}
+
+async function loadRequiredItpRequirements(projectId) {
+  const driver = getNeo4jDriver();
+  const session = driver.session();
+  try {
+    const result = await session.run(
+      `MATCH (plan:ManagementPlan {projectId: $projectId, type: 'PQP'})
+       WHERE coalesce(plan.isDeleted, false) = false
+         AND plan.requiredItps IS NOT NULL
+         AND size(plan.requiredItps) > 0
+       RETURN plan
+       ORDER BY plan.updatedAt DESC, plan.version DESC
+       LIMIT 1`,
+      { projectId }
+    );
+
+    if (result.records.length === 0) {
+      return { plan: null, requiredItps: [] };
+    }
+
+    const planNode = result.records[0].get('plan');
+    const planProps = planNode.properties || {};
+
+    let requiredItpsRaw = planProps.requiredItps;
+    let requiredItps = [];
+
+    if (Array.isArray(requiredItpsRaw)) {
+      requiredItps = requiredItpsRaw;
+    } else if (typeof requiredItpsRaw === 'string') {
+      const trimmed = requiredItpsRaw.trim();
+      if (trimmed.length > 0) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            requiredItps = parsed;
+          } else {
+            log('Warning: requiredItps string JSON did not parse to array; ignoring.', 'yellow');
+          }
+        } catch (err) {
+          log(`Warning: unable to parse requiredItps JSON (${err.message}); ignoring.`, 'yellow');
+        }
+      }
+    } else if (requiredItpsRaw && typeof requiredItpsRaw === 'object') {
+      // Handle Neo4j list represented as object with numeric keys (unlikely but defensive)
+      const maybeArray = Object.values(requiredItpsRaw);
+      if (maybeArray.every((_, idx) => `${idx}` in requiredItpsRaw)) {
+        requiredItps = maybeArray;
+      }
+    }
+
+    return {
+      plan: {
+        elementId: planNode.elementId,
+        identity: typeof planNode.identity === 'number' ? planNode.identity : undefined,
+        title: planProps.title,
+        version: planProps.version,
+        approvalStatus: planProps.approvalStatus,
+        updatedAt: planProps.updatedAt,
+      },
+      requiredItps,
+    };
+  } finally {
+    await session.close();
+  }
+}
+
+process.on('exit', () => {
+  if (neo4jDriver) {
+    neo4jDriver.close().catch(() => {});
+  }
+});
+
 function log(msg, color = '') {
   const colors = { red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', cyan: '\x1b[36m', reset: '\x1b[0m' };
   const c = colors[color] || '';
@@ -176,8 +273,9 @@ async function spawnWorkspace(taskName) {
   });
 }
 
-async function executeTask(taskName, projectId) {
-  log(`Starting: ${taskName}`, 'cyan');
+async function executeTask(taskName, projectId, options = {}) {
+  const displayName = options.displayName || taskName;
+  log(`Starting: ${displayName}`, 'cyan');
   const taskStartedAt = new Date().toISOString();
   
   try {
@@ -190,7 +288,7 @@ async function executeTask(taskName, projectId) {
     const session = await request(`${CONFIG.SERVER_URL}/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: `Agent: ${taskName}` }),
+      body: JSON.stringify({ title: `Agent: ${displayName}` }),
     });
     
     log(`  Session: ${session.id}`, 'blue');
@@ -199,15 +297,23 @@ async function executeTask(taskName, projectId) {
     const metadata = {
       projectId,
       taskName,
+      displayName,
       workspaceSessionId,
       orchestratorSessionId: session.id,
       workspacePath,
       serverUrl: CONFIG.SERVER_URL,
-      startedAt: taskStartedAt
+      startedAt: taskStartedAt,
+      context: options.context || null,
     };
     const metadataPath = `${workspacePath}/orchestrator-meta.json`;
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
     log(`  Metadata saved: orchestrator-meta.json`, 'blue');
+
+    if (options.context?.requiredItp) {
+      const requirementPath = `${workspacePath}/required-itp.json`;
+      fs.writeFileSync(requirementPath, JSON.stringify(options.context.requiredItp, null, 2));
+      log(`  Requirement saved: required-itp.json`, 'blue');
+    }
     
     // 3. Start monitoring BEFORE sending prompt
     let lastProgress = '';
@@ -256,7 +362,7 @@ async function executeTask(taskName, projectId) {
     // 5. Wait for completion via event stream
     const result = await monitorPromise;
     
-    log(`  ✓ Completed: ${taskName} (${result.duration}s)`, 'green');
+    log(`  ✓ Completed: ${displayName} (${result.duration}s)`, 'green');
     log(`    Tools: ${result.stats.toolCount}, Bash: ${result.stats.bashCount}, Files: ${result.stats.fileOps}`, 'blue');
     
     return { 
@@ -267,11 +373,13 @@ async function executeTask(taskName, projectId) {
       duration: result.duration,
       stats: result.stats,
       metadataPath,
-      projectId
+      projectId,
+      context: options.context || null,
+      displayName,
     };
     
   } catch (error) {
-    log(`  ✗ Failed: ${taskName} - ${error.message}`, 'red');
+    log(`  ✗ Failed: ${displayName} - ${error.message}`, 'red');
     throw error;
   }
 }
@@ -288,16 +396,56 @@ class Orchestrator {
     this.states = {};
     this.results = {};
     this.running = new Set();
+    this.dynamicTasks = {};
     
     this.taskList.forEach((task) => {
       this.states[task] = 'pending';
     });
   }
   
+  async prepareDynamicTasks() {
+    if (!this.taskList.includes('itp-generation')) {
+      return;
+    }
+
+    try {
+      const { plan, requiredItps } = await loadRequiredItpRequirements(this.projectId);
+      if (!requiredItps || requiredItps.length === 0) {
+        log('No required ITPs found on PQP plan; running single itp-generation task.', 'yellow');
+        return;
+      }
+
+      const insertionIndex = this.taskList.indexOf('itp-generation');
+      this.taskList.splice(insertionIndex, 1);
+      delete this.states['itp-generation'];
+
+      requiredItps.forEach((requirement, idx) => {
+        const docNoSlug = (requirement.docNo || `ITP-${idx + 1}`).replace(/\s+/g, '-');
+        const taskName = `itp-generation#${docNoSlug}`;
+        this.taskList.splice(insertionIndex + idx, 0, taskName);
+        this.states[taskName] = 'pending';
+        this.dynamicTasks[taskName] = {
+          base: 'itp-generation',
+          requiredItp: requirement,
+          plan,
+          index: idx,
+          total: requiredItps.length,
+        };
+      });
+
+      const planLabel = plan?.title ? `${plan.title} v${plan.version || ''}`.trim() : 'latest PQP plan';
+      log(`Expanded itp-generation into ${requiredItps.length} task(s) using ${planLabel}.`, 'cyan');
+    } catch (error) {
+      log(`Warning: unable to load required ITP requirements (${error.message}). Falling back to single itp-generation run.`, 'yellow');
+    }
+  }
+
   canRun(taskName) {
     if (!Object.prototype.hasOwnProperty.call(this.states, taskName)) return false;
     if (this.states[taskName] !== 'pending') return false;
-    const deps = TASKS[taskName]?.deps || [];
+    const taskConfig = TASKS[taskName] || (this.dynamicTasks[taskName] ? TASKS[this.dynamicTasks[taskName].base] : null);
+    if (!taskConfig) return false;
+    const deps = taskConfig.deps || [];
     return deps.every((dep) => {
       if (!Object.prototype.hasOwnProperty.call(this.states, dep)) {
         return true;
@@ -314,15 +462,32 @@ class Orchestrator {
     this.states[taskName] = 'running';
     this.running.add(taskName);
     
+    const dynamicMeta = this.dynamicTasks[taskName] || null;
+    const actualTaskName = dynamicMeta ? dynamicMeta.base : taskName;
+    const displayName = dynamicMeta
+      ? `${actualTaskName} (${dynamicMeta.requiredItp.docNo || dynamicMeta.requiredItp.workType || taskName})`
+      : taskName;
+    const context = dynamicMeta
+      ? {
+          requiredItp: dynamicMeta.requiredItp,
+          plan: dynamicMeta.plan,
+          index: dynamicMeta.index,
+          total: dynamicMeta.total,
+        }
+      : null;
+
     try {
-      const result = await executeTask(taskName, this.projectId);
+      const result = await executeTask(actualTaskName, this.projectId, {
+        displayName,
+        context,
+      });
       this.states[taskName] = 'completed';
       this.results[taskName] = result;
-      log(`✓ ${taskName}`, 'green');
+      log(`✓ ${displayName}`, 'green');
     } catch (error) {
       this.states[taskName] = 'failed';
-      this.results[taskName] = { success: false, error: error.message };
-      log(`✗ ${taskName}: ${error.message}`, 'red');
+      this.results[taskName] = { success: false, error: error.message, displayName };
+      log(`✗ ${displayName}: ${error.message}`, 'red');
     } finally {
       this.running.delete(taskName);
     }
@@ -341,9 +506,12 @@ class Orchestrator {
     if (this.addedDependencies.length > 0) {
       log(`Added Dependencies: ${this.addedDependencies.join(', ')}`, 'cyan');
     }
+
+    await this.prepareDynamicTasks();
+
     log('Tasks:', 'cyan');
     this.taskList.forEach((name) => {
-      const task = TASKS[name];
+      const task = TASKS[name] || (this.dynamicTasks[name] ? TASKS[this.dynamicTasks[name].base] : null);
       const deps = (task?.deps?.length > 0) ? ` (needs: ${task.deps.join(', ')})` : '';
       const priority = task?.priority ?? '?';
       log(`  ${priority}. ${name}${deps}`, 'blue');
@@ -392,6 +560,7 @@ class Orchestrator {
       const symbol = state === 'completed' ? '✓' : state === 'failed' ? '✗' : '⋯';
       const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : 'yellow';
       const result = this.results[name];
+      const label = result?.displayName || name;
       
       if (state === 'completed' && result?.stats) {
         totalTools += result.stats.toolCount || 0;
@@ -404,10 +573,10 @@ class Orchestrator {
         if (workspaceInfo) detailParts.push(workspaceInfo);
         if (metadataInfo) detailParts.push(metadataInfo);
         detailParts.push(`Tools: ${result.stats.toolCount}`, `Bash: ${result.stats.bashCount}`, `Files: ${result.stats.fileOps}`);
-        log(`  ${symbol} ${name} - ${detailParts.join(' | ')}`, color);
+        log(`  ${symbol} ${label} - ${detailParts.join(' | ')}`, color);
       } else {
         const sessionInfo = result?.sessionId ? ` (session ${result.sessionId})` : '';
-        log(`  ${symbol} ${name}: ${state}${sessionInfo}`, color);
+        log(`  ${symbol} ${label}: ${state}${sessionInfo}`, color);
       }
       
       if (result?.error) {

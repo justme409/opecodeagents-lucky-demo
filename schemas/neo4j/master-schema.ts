@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * ============================================================================
- * MASTER PROJECT SCHEMA - OPTION 3: FLAT STRUCTURE
+ * MASTER PROJECT SCHEMA - FLAT STRUCTURE
  * ============================================================================
  * 
  * Organization: Flat list with metadata tags
@@ -38,6 +38,36 @@ export interface EntityMetadata {
     outgoing?: Array<{ type: string; target: string; description: string }>;
     incoming?: Array<{ type: string; source: string; description: string }>;
   };
+}
+
+export const JURISDICTION_VALUES = [
+  'QLD, Queensland',
+  'SA, South Australia',
+  'NSW, New South Wales',
+  'VIC, Victoria',
+  'WA, Western Australia',
+  'TAS, Tasmania',
+  'NT, Northern Territory',
+  'ACT, Australian Capital Territory',
+  'Other',
+] as const;
+
+export type JurisdictionValue = typeof JURISDICTION_VALUES[number];
+
+export const JURISDICTION_AGENCIES: Record<JurisdictionValue, string> = {
+  'QLD, Queensland': 'Department of Transport and Main Roads',
+  'SA, South Australia': 'Department for Infrastructure and Transport',
+  'NSW, New South Wales': 'Transport for NSW',
+  'VIC, Victoria': 'Department of Transport and Planning',
+  'WA, Western Australia': 'Main Roads Western Australia',
+  'TAS, Tasmania': 'Department of State Growth',
+  'NT, Northern Territory': 'Department of Infrastructure, Planning and Logistics',
+  'ACT, Australian Capital Territory': 'Transport Canberra and City Services Directorate',
+  Other: 'Other',
+};
+
+export function getJurisdictionAgency(jurisdiction: JurisdictionValue): string {
+  return JURISDICTION_AGENCIES[jurisdiction];
 }
 
 // ============================================================================
@@ -489,7 +519,8 @@ export interface ITPTemplateNode {
   description: string;
   workType: string;
   specRef: string;
-  jurisdiction?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';
+  jurisdiction?: JurisdictionValue;
+  agency?: string;
   applicableStandards?: string[];
   scopeOfWork?: string;
   status: 'draft' | 'in_review' | 'approved' | 'superseded';
@@ -501,6 +532,7 @@ export interface ITPTemplateNode {
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const ITPTemplateMetadata: EntityMetadata = {
@@ -534,7 +566,8 @@ export const ITPTemplateSchema = z.object({
   description: z.string(),
   workType: z.string(),
   specRef: z.string(),
-  jurisdiction: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
+  agency: z.string().optional(),
   applicableStandards: z.array(z.string()).optional(),
   scopeOfWork: z.string().optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded']),
@@ -551,7 +584,8 @@ export const CreateITPTemplateInputSchema = z.object({
   description: z.string(),
   workType: z.string(),
   specRef: z.string(),
-  jurisdiction: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
+  agency: z.string().optional(),
   applicableStandards: z.array(z.string()).optional(),
   scopeOfWork: z.string().optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded']).default('draft'),
@@ -604,6 +638,7 @@ export const ITP_TEMPLATE_QUERIES = {
       workType: $workType,
       specRef: $specRef,
       jurisdiction: $jurisdiction,
+      agency: $agency,
       applicableStandards: $applicableStandards,
       scopeOfWork: $scopeOfWork,
       status: coalesce($status, 'draft'),
@@ -965,6 +1000,15 @@ export const LOT_QUERIES = {
  * MANAGEMENT PLAN
  * Project management plans (PQP, OHSMP, EMP, etc.)
  */
+const ManagementPlanRequiredItpSchema = z.object({
+  docNo: z.string(),
+  workType: z.string(),
+  mandatory: z.boolean(),
+  specRef: z.string().optional(),
+});
+
+export type ManagementPlanRequiredItp = z.infer<typeof ManagementPlanRequiredItpSchema>;
+
 export interface ManagementPlanNode {
   projectId: string;  // Foreign key to Project
   type: 'PQP' | 'OHSMP' | 'EMP' | 'CEMP' | 'TMP';
@@ -976,6 +1020,7 @@ export interface ManagementPlanNode {
   summary?: string;
   htmlContent?: string;
   notes?: string;
+  requiredItps?: ManagementPlanRequiredItp[];
   createdAt: Date;
   updatedAt: Date;
   id?: string;
@@ -1011,6 +1056,7 @@ export const ManagementPlanSchema = z.object({
   summary: z.string().optional(),
   htmlContent: z.string().optional(),
   notes: z.string().optional(),
+  requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
 
 export const CreateManagementPlanInputSchema = z.object({
@@ -1023,6 +1069,7 @@ export const CreateManagementPlanInputSchema = z.object({
   summary: z.string().optional(),
   htmlContent: z.string().optional(),
   notes: z.string().optional(),
+  requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
 
 export type CreateManagementPlanInput = z.infer<typeof CreateManagementPlanInputSchema>;
@@ -1036,6 +1083,7 @@ export const UpdateManagementPlanInputSchema = z.object({
   summary: z.string().optional(),
   htmlContent: z.string().optional(),
   notes: z.string().optional(),
+  requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
 
 export type UpdateManagementPlanInput = z.infer<typeof UpdateManagementPlanInputSchema>;
@@ -1073,6 +1121,7 @@ export const MANAGEMENT_PLAN_QUERIES = {
       END,
       summary: $properties.summary,
       htmlContent: $properties.htmlContent,
+      requiredItps: coalesce($properties.requiredItps, []),
       notes: $properties.notes,
       createdAt: datetime(),
       updatedAt: datetime(),
@@ -1535,8 +1584,8 @@ export interface ProjectNode {
   scopeSummary?: string;  // Brief summary of work scope
   projectAddress?: string;  // Physical site address
   stateTerritory?: string;  // Australian state/territory
-  jurisdiction?: string;  // Governing jurisdiction
-  jurisdictionCode?: 'QLD' | 'NSW' | 'VIC' | 'SA' | 'WA' | 'TAS' | 'NT' | 'ACT';  // UPPERCASE code
+  jurisdiction?: JurisdictionValue;  // Governing jurisdiction
+  agency?: string;  // Responsible road agency
   localCouncil?: string;  // Local authority/council name
   contractValue?: string;  // Monetary value with currency
   procurementMethod?: string;  // Contract type (D&C, EPC, lump sum, etc.)
@@ -1567,6 +1616,7 @@ export const ProjectMetadata: EntityMetadata = {
     outgoing: [],
     incoming: [
       { type: 'BELONGS_TO_PROJECT', source: 'ALL', description: 'All entities belong to project' },
+      { type: 'BELONGS_TO_PROJECT', source: 'Party', description: 'Parties belong to project' },
     ],
   },
 };
@@ -1580,8 +1630,8 @@ export const ProjectSchema = z.object({
   scopeSummary: z.string().optional(),
   projectAddress: z.string().optional(),
   stateTerritory: z.string().optional(),
-  jurisdiction: z.string().optional(),
-  jurisdictionCode: z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']).optional(),
+  jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
+  agency: z.string().optional(),
   localCouncil: z.string().optional(),
   contractValue: z.string().optional(),
   procurementMethod: z.string().optional(),
@@ -1619,7 +1669,7 @@ export const PROJECT_QUERIES = {
       projectAddress: $projectAddress,
       stateTerritory: $stateTerritory,
       jurisdiction: $jurisdiction,
-      jurisdictionCode: $jurisdictionCode,
+      agency: $agency,
       localCouncil: $localCouncil,
       contractValue: $contractValue,
       procurementMethod: $procurementMethod,
@@ -2243,7 +2293,6 @@ export interface StandardNode {
 
 export const StandardMetadata: EntityMetadata = {
   createdBy: [
-    { agent: 'standards-extraction', prompt: '@prompts/standards-extraction.md' },
     { agent: 'pqp-generation', prompt: '@prompts/pqp-generation.md' },
   ],
   displayedOn: [
@@ -3128,6 +3177,137 @@ export const WORK_TYPE_QUERIES = {
   `,
 };
 
+// ----------------------------------------------------------------------------
+
+/**
+ * PARTY
+ * Key project parties and contacts
+ */
+export interface PartyNode {
+  projectId: string;  // Foreign key to Project
+  code: string;
+  name: string;
+  role: string;
+  organization: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  abn?: string;
+  additionalDetails?: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const PartyMetadata: EntityMetadata = {
+  createdBy: [
+    { agent: 'project-details', prompt: '@prompts/project-details.md' },
+  ],
+  displayedOn: [
+    '/projects/[projectId]/settings',
+    '/projects/[projectId]/team',
+  ],
+  relationships: {
+    outgoing: [
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Party belongs to project' },
+    ],
+    incoming: [],
+  },
+};
+
+export const PartySchema = z.object({
+  projectId: z.string(),
+  code: z.string(),
+  name: z.string(),
+  role: z.string(),
+  organization: z.string(),
+  contactPerson: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  abn: z.string().optional(),
+  additionalDetails: z.record(z.any()).optional(),
+});
+
+export const CreatePartyInputSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  role: z.string(),
+  organization: z.string(),
+  contactPerson: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  abn: z.string().optional(),
+  additionalDetails: z.record(z.any()).optional(),
+});
+
+export type CreatePartyInput = z.infer<typeof CreatePartyInputSchema>;
+
+export const UpdatePartyInputSchema = z.object({
+  name: z.string().optional(),
+  role: z.string().optional(),
+  organization: z.string().optional(),
+  contactPerson: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  abn: z.string().optional(),
+  additionalDetails: z.record(z.any()).optional(),
+});
+
+export type UpdatePartyInput = z.infer<typeof UpdatePartyInputSchema>;
+
+export const PARTY_QUERIES = {
+  getAllParties: `
+    MATCH (party:Party {projectId: $projectId})
+    WHERE COALESCE(party.isDeleted, false) = false
+    RETURN party
+    ORDER BY party.name
+  `,
+  getPartyByCode: `
+    MATCH (party:Party {projectId: $projectId, code: $code})
+    WHERE COALESCE(party.isDeleted, false) = false
+    RETURN party
+  `,
+  createParty: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (party:Party {
+      projectId: $projectId,
+      code: $properties.code,
+      name: $properties.name,
+      role: $properties.role,
+      organization: $properties.organization,
+      contactPerson: $properties.contactPerson,
+      email: $properties.email,
+      phone: $properties.phone,
+      address: $properties.address,
+      abn: $properties.abn,
+      additionalDetails: COALESCE($properties.additionalDetails, {}),
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (party)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN party
+  `,
+  updateParty: `
+    MATCH (party:Party {projectId: $projectId, code: $code})
+    WHERE COALESCE(party.isDeleted, false) = false
+    SET party += $properties,
+        party.updatedAt = datetime()
+    RETURN party
+  `,
+  deleteParty: `
+    MATCH (party:Party {projectId: $projectId, code: $code})
+    WHERE COALESCE(party.isDeleted, false) = false
+    SET party.isDeleted = true,
+        party.updatedAt = datetime()
+    RETURN party
+  `,
+};
+
 // ============================================================================
 // MASTER OUTPUT
 // ============================================================================
@@ -3141,6 +3321,7 @@ export interface MasterProjectOutput {
   suppliers?: SupplierNode[];
   laboratories?: LaboratoryNode[];
   users?: UserNode[];
+  parties?: PartyNode[];
   itpTemplates?: Array<{
     template: ITPTemplateNode;
     inspectionPoints: InspectionPointNode[];
@@ -3205,6 +3386,7 @@ export const ALL_ENTITIES = [
   'Material',
   'MixDesign',
   'NCR',
+  'Party',
   'Photo',
   'ProgressClaim',
   'Project',
@@ -3237,6 +3419,7 @@ export function getEntityMetadata(entityType: EntityType): EntityMetadata {
     Material: MaterialMetadata,
     MixDesign: MixDesignMetadata,
     NCR: NCRMetadata,
+    Party: PartyMetadata,
     Photo: PhotoMetadata,
     ProgressClaim: ProgressClaimMetadata,
     Project: ProjectMetadata,
@@ -3270,6 +3453,7 @@ export function getEntitySchema(entityType: EntityType): z.ZodSchema {
     Material: MaterialSchema,
     MixDesign: MixDesignSchema,
     NCR: NCRSchema,
+    Party: PartySchema,
     Photo: PhotoSchema,
     ProgressClaim: ProgressClaimSchema,
     Project: ProjectSchema,

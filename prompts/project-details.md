@@ -35,10 +35,43 @@ Project details should be extracted from authoritative sources in order of prefe
 - **Project address** - Physical site address (street, suburb, state, postcode)
 - **State/territory** - Australian state/territory (full name or code)
 - **Local council** - Local authority/council name
-- **Jurisdiction** - Governing jurisdiction
-- **Jurisdiction code** - UPPERCASE code [QLD, NSW, VIC, SA, WA, TAS, NT, ACT]
+- **Jurisdiction** - MUST be one of:
+  - `QLD, Queensland`
+  - `SA, South Australia`
+  - `NSW, New South Wales`
+  - `VIC, Victoria`
+  - `WA, Western Australia`
+  - `TAS, Tasmania`
+  - `NT, Northern Territory`
+  - `ACT, Australian Capital Territory`
+  - `Other`
+  If the project is in Australia, infer the jurisdiction from the project address. Use `Other` only when no mapping applies.
+- **Agency** - Responsible state/territory road authority. Use the exact string below that matches the jurisdiction:
+  - `QLD, Queensland` → `Department of Transport and Main Roads`
+  - `SA, South Australia` → `Department for Infrastructure and Transport`
+  - `NSW, New South Wales` → `Transport for NSW`
+  - `VIC, Victoria` → `Department of Transport and Planning`
+  - `WA, Western Australia` → `Main Roads Western Australia`
+  - `TAS, Tasmania` → `Department of State Growth`
+  - `NT, Northern Territory` → `Department of Infrastructure, Planning and Logistics`
+  - `ACT, Australian Capital Territory` → `Transport Canberra and City Services Directorate`
+  - `Other` → Use the authority explicitly named in documents, otherwise keep the literal string `Other`.
 
 #### Parties and Organisations
+- Capture all contracting parties, principals, consultants, authorities and key contacts.
+- In addition to the structured `parties` JSON string on the Project node, create separate `Party` nodes for every organisation/contact combination you extract.
+  - **Party node fields:**
+    - `projectId` (REQUIRED)
+    - `code` - Stable slug (lowercase, hyphenated). Use organisation or organisation+role (e.g., `client-main-roads-wa`).
+    - `name` - Party display name (organisation or individual if the contract is personal).
+    - `role` - Role such as Client, Principal, Superintendent, Consultant, Authority, Subcontractor.
+    - `organization` - Organisation name (for individuals, the company they represent; repeat `name` if they are the organisation).
+    - `contactPerson` - Primary representative (if different from the organisation name).
+    - `email`, `phone`, `address`, `abn` - Populate when present in documents; leave undefined if unknown.
+    - `additionalDetails` - JSON object for any extra, verifiable data (e.g., licence numbers, specific responsibilities).
+  - Deduplicate by `code`. Merge information when multiple documents reference the same party.
+- Ensure `Party` nodes are linked to the Project via `[:BELONGS_TO_PROJECT]` when writing Cypher.
+
 - **Client** - Client organisation(s)
 - **Principal** - Principal contractor organisation(s)
 - **Parties mentioned** - All identifiable persons with name, title, organisation
@@ -75,10 +108,9 @@ Do NOT extract any project/job/contract codes into the main projectCode field. I
 - The internal project code (our own) must not be invented
 
 ### Jurisdiction Handling
-- When jurisdiction can be inferred, the jurisdictionCode is REQUIRED
-- Must be one of [QLD, NSW, VIC, SA, WA, TAS, NT, ACT] in UPPERCASE
-- If only a full state name is present (e.g., "Queensland", "South Australia"), convert to the corresponding code (QLD, SA, etc.)
-- DO NOT output lowercase or any other values
+- When jurisdiction can be inferred, the Project node `jurisdiction` field is REQUIRED and MUST use one of the canonical strings listed above.
+- Set the Project node `agency` field to the matching road authority string (or `Other` if there is no applicable authority).
+- Never output legacy jurisdiction codes or lowercase variants.
 
 ### Contact Directory
 Extract every contact you can find, grouped by organisation category:
@@ -102,6 +134,7 @@ Identify the principal organisations and roles and show the hierarchy:
 - Include ABN/ACN if present
 - Show primary contacts for each organisation
 - Identify reporting relationships
+- Ensure every organisation represented in the hierarchy also has a `Party` node with the same core information
 
 ## HTML Output Requirements
 
@@ -206,12 +239,12 @@ Your output must conform to the Project schema. See the output schema file copie
 - `procurementMethod` - Contract type
 - `scopeSummary` - Brief scope
 - `stateTerritory` - Full state name
-- `jurisdiction` - Jurisdiction name
-- `jurisdictionCode` - UPPERCASE code [QLD, NSW, VIC, SA, WA, TAS, NT, ACT]
+- `jurisdiction` - Canonical jurisdiction string (see list above)
+- `agency` - Responsible road authority string (see mapping above)
 - `localCouncil` - Council name
 - `regulatoryFramework` - Governing legislation
 - `applicableStandards` - Array of standards
-- `parties` - JSON string with client, principal, partiesMentionedInDocs
+- `parties` - JSON string with client, principal, partiesMentionedInDocs (keep for backward compatibility)
 - `keyDates` - Object with commencementDate, practicalCompletionDate, defectsLiabilityPeriod
 - `sourceDocuments` - Array of document IDs
 - `htmlContent` - Complete HTML string (NOT a file path)
@@ -219,5 +252,5 @@ Your output must conform to the Project schema. See the output schema file copie
 - `createdAt` - Use datetime()
 - `updatedAt` - Use datetime()
 
-All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
+In addition, create or update `Party` nodes per the schema: write each party via Cypher, set `createdAt`/`updatedAt` to datetime(), and connect them to the Project with `[:BELONGS_TO_PROJECT]`.
 

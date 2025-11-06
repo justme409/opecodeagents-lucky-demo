@@ -110,6 +110,31 @@ When matching standards:
 3. **Be specific** - Most ITPs will only need 1-2 standards from their jurisdiction's standard pack
 4. **Consider project context** - Match standards based on work type and project requirements
 
+## Jurisdiction and Agency Population
+
+- Populate every `ITPTemplate` node with the canonical jurisdiction string taken from this list:
+  - `QLD, Queensland`
+  - `SA, South Australia`
+  - `NSW, New South Wales`
+  - `VIC, Victoria`
+  - `WA, Western Australia`
+  - `TAS, Tasmania`
+  - `NT, Northern Territory`
+  - `ACT, Australian Capital Territory`
+  - `Other`
+- Derive the value from the linked Project node whenever possible. Use `Other` only when the work is outside the listed jurisdictions or the project data explicitly states a different authority.
+- Set the `agency` field using the matching road authority name:
+  - `QLD, Queensland` → `Department of Transport and Main Roads`
+  - `SA, South Australia` → `Department for Infrastructure and Transport`
+  - `NSW, New South Wales` → `Transport for NSW`
+  - `VIC, Victoria` → `Department of Transport and Planning`
+  - `WA, Western Australia` → `Main Roads Western Australia`
+  - `TAS, Tasmania` → `Department of State Growth`
+  - `NT, Northern Territory` → `Department of Infrastructure, Planning and Logistics`
+  - `ACT, Australian Capital Territory` → `Transport Canberra and City Services Directorate`
+  - `Other` → Use the authority explicitly referenced in the documents, otherwise keep the literal string `Other`.
+- Never emit separate jurisdiction codes or lowercase variants. The combined string plus agency is now the source of truth.
+
 ## Naming Convention
 
 **CRITICAL**: All field names MUST use camelCase (e.g., `projectId`, `docNo`, `workType`, `revisionDate`).
@@ -143,13 +168,15 @@ All output must be written directly to the Generated Database (port 7690) as Neo
 **Example Cypher Pattern**:
 ```cypher
 MATCH (p:Project {projectId: $projectUuid})
-CREATE (itp:ITP_Template {
+CREATE (itp:ITPTemplate {
   id: randomUUID(),
   projectId: $projectUuid,
   docNo: "ITP-001",
   description: "...",
   workType: "...",
   specRef: "...",
+  jurisdiction: "QLD, Queensland",
+  agency: "Department of Transport and Main Roads",
   status: "approved",
   approvalStatus: "approved",
   revisionNumber: "01",

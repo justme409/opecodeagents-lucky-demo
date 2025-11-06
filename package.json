@@ -1,0 +1,18 @@
+{
+  "name": "opecodeagents-lucky-demo",
+  "version": "1.0.0",
+  "description": "AI-powered agent orchestration for extracting and generating construction project documentation from Neo4j databases.",
+  "main": "extract-agent-schema.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "neo4j-driver": "^6.0.1"
+  }
+}
