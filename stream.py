@@ -9,9 +9,12 @@ import json
 import sys
 import http.client
 from urllib.parse import urlparse
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 BASE_URL = "http://127.0.0.1:4096"
+
+# Maintain in-flight text/reasoning parts so we can emit them once finished
+_TEXT_PART_BUFFERS: Dict[str, Dict[str, Any]] = {}
 
 def parse_sse_event(line):
     """Parse a Server-Sent Events line."""
@@ -77,6 +80,74 @@ def build_prefix(session_id: Optional[str], project_id: Optional[str]) -> str:
     if project_id:
         return f"[project {project_id}]"
     return "[server]"
+
+
+def _text_part_key(session_id: Optional[str], part: Dict[str, Any]) -> str:
+    part_id = part.get("id")
+    if isinstance(part_id, str) and part_id:
+        return part_id
+
+    message_id = part.get("messageID") or part.get("messageId") or "unknown-message"
+    index = part.get("index")
+    if index is None:
+        index = "unknown-index"
+
+    return f"{session_id or 'server'}::{message_id}::{index}"
+
+
+def _update_text_buffer(
+    key: str,
+    session_id: Optional[str],
+    project_id: Optional[str],
+    part_type: str,
+    text_value: Optional[str],
+) -> None:
+    buffer = _TEXT_PART_BUFFERS.get(key, {})
+    buffer["session_id"] = session_id
+    buffer["project_id"] = project_id
+    buffer["part_type"] = part_type
+    if text_value is not None:
+        buffer["text"] = text_value
+    elif "text" not in buffer:
+        buffer["text"] = ""
+    _TEXT_PART_BUFFERS[key] = buffer
+
+
+def _format_buffer_payload(payload: Dict[str, Any]) -> str:
+    text_out = payload.get("text", "") or ""
+    if not text_out:
+        return ""
+
+    leader = build_prefix(payload.get("session_id"), payload.get("project_id"))
+    label = "reasoning" if payload.get("part_type") == "reasoning" else "text"
+    if not text_out.endswith("\n"):
+        text_out += "\n"
+    return f"{leader} {label}: {text_out}"
+
+
+def _emit_buffer_for_key(key: str) -> str:
+    payload = _TEXT_PART_BUFFERS.pop(key, None)
+    if not payload:
+        return ""
+    return _format_buffer_payload(payload)
+
+
+def _flush_session_buffers(session_id: Optional[str]) -> str:
+    if not session_id:
+        return ""
+
+    outputs: List[str] = []
+    keys_to_flush = [
+        key for key, payload in _TEXT_PART_BUFFERS.items()
+        if payload.get("session_id") == session_id
+    ]
+
+    for key in keys_to_flush:
+        emitted = _emit_buffer_for_key(key)
+        if emitted:
+            outputs.append(emitted)
+
+    return "".join(outputs)
 
 
 def parse_cli_args() -> Dict[str, Set[str]]:
@@ -148,12 +219,14 @@ def format_event(event_data: str, filters: Dict[str, Set[str]]) -> str:
             return ""
 
         if event_type == "session.idle":
-            return f"{leader} idle\n"
+            buffered = _flush_session_buffers(session_id)
+            return f"{buffered}{leader} idle\n"
 
         if event_type == "session.error":
             error = properties.get("error", {})
             message = error.get("data", {}).get("message", "Unknown error")
-            return f"{leader} error: {message}\n"
+            buffered = _flush_session_buffers(session_id)
+            return f"{buffered}{leader} error: {message}\n"
 
         if event_type == "permission.updated":
             title = properties.get("title", "permission")
@@ -169,22 +242,18 @@ def format_event(event_data: str, filters: Dict[str, Set[str]]) -> str:
         if event_type == "message.part.updated":
             part = properties.get("part", {})
             part_type = part.get("type", "unknown")
-            delta = properties.get("delta", "")
 
-            if part_type == "text":
-                if not delta:
+            if part_type in {"text", "reasoning"}:
+                key = _text_part_key(session_id, part)
+                _update_text_buffer(key, session_id, project_id, part_type, part.get("text"))
+
+                delta = properties.get("delta")
+                is_final = delta is None or (isinstance(delta, str) and not delta)
+                if not is_final:
                     return ""
-                text_delta = delta if delta.endswith("\n") else f"{delta}\n"
-                return f"{leader} text: {text_delta}"
 
-            if part_type == "reasoning":
-                if delta:
-                    reasoning_delta = delta if delta.endswith("\n") else f"{delta}\n"
-                    return f"{leader} reasoning: {reasoning_delta}"
-                text = part.get("text", "")
-                if text:
-                    return f"{leader} reasoning-start {text}\n"
-                return ""
+                emitted = _emit_buffer_for_key(key)
+                return emitted
 
             if part_type == "tool":
                 tool_name = part.get("tool", "unknown")
