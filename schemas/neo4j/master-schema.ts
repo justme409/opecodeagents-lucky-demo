@@ -629,6 +629,23 @@ export const ITP_TEMPLATE_QUERIES = {
     WHERE COALESCE(t.isDeleted, false) = false
     RETURN t
   `,
+  getTemplateWithPoints: `
+    MATCH (t:ITPTemplate {projectId: $projectId, docNo: $docNo})
+    WHERE COALESCE(t.isDeleted, false) = false
+    OPTIONAL MATCH (t)-[:HAS_POINT]->(relIp:InspectionPoint)
+    WHERE COALESCE(relIp.isDeleted, false) = false
+    WITH t, collect(relIp) AS relPoints
+    OPTIONAL MATCH (propIp:InspectionPoint {projectId: $projectId, parentType: 'template', parentKey: $docNo})
+    WHERE COALESCE(propIp.isDeleted, false) = false
+    WITH t, relPoints, collect(propIp) AS propPoints
+    WITH t, relPoints + propPoints AS combinedPoints
+    UNWIND combinedPoints AS point
+    WITH t, point
+    WHERE point IS NOT NULL
+    WITH t, point
+    ORDER BY point.sequence
+    RETURN t AS template, collect(DISTINCT point) AS points
+  `,
   createTemplate: `
     MATCH (p:Project {projectId: $projectId})
     CREATE (t:ITPTemplate {
