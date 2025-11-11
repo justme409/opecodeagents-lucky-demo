@@ -101,7 +101,7 @@ print_success "Workspace directory created"
 # Get list of files to copy
 FILES=$(jq -r ".tasks.\"$TASK_NAME\".files[]" "$MANIFEST_FILE")
 
-# Copy files
+# Copy files directly to workspace root (no shared/ or prompts/ folders)
 print_info "Copying required files..."
 FILE_COUNT=0
 
@@ -113,35 +113,31 @@ while IFS= read -r file; do
         continue
     fi
     
-    # Create subdirectories in workspace if needed
-    DEST_FILE="$WORKSPACE_DIR/$file"
-    DEST_DIR=$(dirname "$DEST_FILE")
-    mkdir -p "$DEST_DIR"
+    # Extract filename, removing shared/ or prompts/ prefix
+    if [[ "$file" == shared/* ]]; then
+        DEST_FILE="$WORKSPACE_DIR/$(basename "$file")"
+    elif [[ "$file" == prompts/* ]]; then
+        DEST_FILE="$WORKSPACE_DIR/prompt.md"
+    else
+        DEST_FILE="$WORKSPACE_DIR/$(basename "$file")"
+    fi
     
     # Copy the file
     cp "$SOURCE_FILE" "$DEST_FILE"
     FILE_COUNT=$((FILE_COUNT + 1))
-    echo "  - $file"
+    echo "  - $(basename "$DEST_FILE")"
 done <<< "$FILES"
 
 print_success "Copied $FILE_COUNT files"
 echo ""
 
-# Rename the prompt file to prompt.md for consistency
-PROMPT_SOURCE="$WORKSPACE_DIR/prompts/$TASK_NAME.md"
-if [ -f "$PROMPT_SOURCE" ]; then
-    mv "$PROMPT_SOURCE" "$WORKSPACE_DIR/prompt.md"
-    print_success "Renamed prompt file to prompt.md"
-fi
-
 # Generate schema files
 print_info "Generating schema documentation..."
-if [ -f "$SCRIPT_DIR/extract-master-schema.js" ] && [ -f "$SCRIPT_DIR/extract-agent-schema.js" ]; then
-    node "$SCRIPT_DIR/extract-master-schema.js" > "$WORKSPACE_DIR/MASTER_SCHEMA.md"
+if [ -f "$SCRIPT_DIR/extract-agent-schema.js" ]; then
     node "$SCRIPT_DIR/extract-agent-schema.js" "$TASK_NAME" > "$WORKSPACE_DIR/AGENT_SCHEMA.md"
-    print_success "Generated MASTER_SCHEMA.md and AGENT_SCHEMA.md"
+    print_success "Generated AGENT_SCHEMA.md"
 else
-    print_warning "Schema extractors not found, skipping"
+    print_warning "Agent schema extractor not found, skipping"
 fi
 
 # Create a session info file
@@ -162,12 +158,11 @@ Files Included:
 $(find "$WORKSPACE_DIR" -type f -not -path '*/.*' | sort | sed 's|'"$WORKSPACE_DIR"'/|  - |')
 
 Instructions:
-1. Review prompt.md for task-specific instructions
-2. Review shared/instructions.md for general workflow
-3. Check shared/connection details.md for database access
-4. Review schema files to understand input and output structures
-5. Start exploring the databases using shared/Exploration guide.md
-6. Generate output as Neo4j nodes in the Generated database (port 7690)
+1. Review instructions.md for detailed workflow and guidance
+2. Check connection details.md for database access
+3. Review schema files to understand input and output structures
+4. Use Writing to Generated DB.md for execution patterns
+5. Generate output as Neo4j nodes in the Generated database (port 7690)
 
 Database Access:
 - Standards DB (READ):     neo4j://localhost:7687
@@ -177,120 +172,6 @@ Database Access:
 EOF
 
 print_success "Created session info file"
-echo ""
-
-# Create a README for the workspace
-README_FILE="$WORKSPACE_DIR/README.md"
-cat > "$README_FILE" << EOF
-# Agent Workspace: $TASK_NAME
-
-**Session ID:** $SESSION_ID  
-**Created:** $(date)
-
-## Task Description
-
-$TASK_DESC
-
-## Quick Start
-
-1. **Read the task prompt:**
-   \`\`\`
-   cat prompt.md
-   \`\`\`
-
-2. **Review instructions:**
-   \`\`\`
-   cat shared/instructions.md
-   \`\`\`
-
-3. **Check database connections:**
-   \`\`\`
-   cat shared/connection\ details.md
-   \`\`\`
-
-4. **Explore databases:**
-   - Follow guidance in \`shared/Exploration guide.md\`
-   - Standards DB: \`neo4j://localhost:7687\` (READ ONLY)
-   - Project Docs DB: \`neo4j://localhost:7688\` (READ ONLY)
-   - Generated DB: \`neo4j://localhost:7690\` (WRITE)
-
-5. **Review output schema:**
-   - Check \`schemas/neo4j/*.schema.ts\` files
-   - Understand required node structure
-   - Follow property and relationship definitions
-
-6. **Generate output:**
-   - Write all output to Generated DB (port 7690)
-   - Use Cypher CREATE statements
-   - Follow the schema exactly
-
-## Workspace Structure
-
-\`\`\`
-$WORKSPACE_DIR/
-├── prompt.md                    # Your task-specific instructions
-├── session-info.txt             # Session information
-├── README.md                    # This file
-├── MASTER_SCHEMA.md             # Complete project schema overview
-├── AGENT_SCHEMA.md              # Your specific output schema
-└── shared/                      # Shared infrastructure files
-    ├── instructions.md
-    ├── connection details.md
-    ├── Exploration guide.md
-    ├── neo4j standards schema.md
-    └── neo4j project docs schema.md
-\`\`\`
-
-## Output Requirements
-
-✅ **DO:**
-- Write all output to Generated DB (port 7690)
-- Use Cypher CREATE/MERGE statements
-- Follow the schema exactly
-- Validate your output before finalizing
-
-❌ **DON'T:**
-- Write to Standards or Project Docs databases
-- Create JSON files
-- Create Markdown output files
-- Invent data not found in source documents
-
-## Validation
-
-Before finishing, validate your output:
-
-\`\`\`cypher
-// Connect to Generated DB
-cypher-shell -a neo4j://localhost:7690 -u neo4j -p 27184236e197d5f4c36c60f453ebafd9
-
-// Check node counts
-MATCH (n:YourNodeType)
-RETURN count(n)
-
-// Verify relationships
-MATCH (a)-[r:YOUR_RELATIONSHIP]->(b)
-RETURN count(r)
-
-// Check for missing required properties
-MATCH (n:YourNodeType)
-WHERE n.requiredProperty IS NULL
-RETURN count(n)
-\`\`\`
-
-## Success Criteria
-
-Your task is complete when:
-- [ ] All required nodes are created in Generated DB
-- [ ] All relationships are correctly established
-- [ ] All required properties are set
-- [ ] Output matches the schema exactly
-- [ ] Validation queries return expected results
-- [ ] All data is traceable to source documents
-
-Good luck!
-EOF
-
-print_success "Created workspace README"
 echo ""
 
 # Print summary
@@ -306,9 +187,8 @@ echo "Location: $WORKSPACE_DIR"
 echo ""
 echo "Next Steps:"
 echo "  1. cd $WORKSPACE_DIR"
-echo "  2. cat README.md"
-echo "  3. cat prompt.md"
-echo "  4. Start working on the task"
+echo "  2. cat $SCRIPT_DIR/shared/instructions.md"
+echo "  3. Follow the workflow documented in that file"
 echo ""
 echo "To trigger OpenCode agent (if configured):"
 echo "  POST to OpenCode API with workspace path: $WORKSPACE_DIR"

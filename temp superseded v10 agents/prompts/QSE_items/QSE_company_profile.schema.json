@@ -1,0 +1,285 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://projectpro.pro/schemas/QSE_company_profile.schema.json",
+  "title": "QSE Company Profile",
+  "description": "Minimum and recommended fields to tailor ISO-compliant QSE documents across corporate procedures, registers and templates.",
+  "type": "object",
+  "definitions": {
+    "person": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full legal name" },
+        "title": { "type": "string", "description": "Job title/role" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "signature_name": { "type": "string", "description": "Name to appear in signature blocks if different from legal name" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "address": {
+      "type": "object",
+      "properties": {
+        "line1": { "type": "string" },
+        "line2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string", "description": "State/Region, e.g., NSW" },
+        "postcode": { "type": "string" },
+        "country": { "type": "string", "default": "Australia" }
+      },
+      "required": ["line1", "city", "state", "postcode", "country"],
+      "additionalProperties": false
+    },
+    "role_requirements": {
+      "type": "object",
+      "properties": {
+        "essential_qualifications": { "type": "array", "items": { "type": "string" } },
+        "mandatory_training": { "type": "array", "items": { "type": "string" } },
+        "refresh_cycle_months": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "approval_matrix": {
+      "type": "object",
+      "properties": {
+        "policy": { "type": "string", "description": "Approver role for Policies (e.g., CEO)" },
+        "procedure": { "type": "string", "description": "Approver role for Procedures (e.g., Operations Manager)" },
+        "register": { "type": "string", "description": "Approver role for Registers (e.g., QSE Manager)" },
+        "form": { "type": "string", "description": "Approver role for Forms/Templates (e.g., QSE Manager)" },
+        "manual": { "type": "string", "description": "Approver role for Manuals (e.g., CEO)" }
+      },
+      "required": ["policy", "procedure", "register", "form"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "company": {
+      "type": "object",
+      "properties": {
+        "legal_name": { "type": "string" },
+        "trading_name": { "type": "string" },
+        "abn_acn": { "type": "string", "description": "ABN or ACN (if applicable)" },
+        "head_office": { "$ref": "#/definitions/address" },
+        "phone": { "type": "string" },
+        "website": { "type": "string" },
+        "logo_url": { "type": "string" },
+        "industry_sector": { "type": "string", "default": "Civil Construction" },
+        "typical_project_types": { "type": "array", "items": { "type": "string" } },
+        "regions": { "type": "array", "items": { "type": "string" }, "description": "Operating regions/states (e.g., NSW, VIC)" },
+        "working_hours_policy": { "type": "string", "description": "General working hours guidance (e.g., Mon–Fri, 7am–5pm)" }
+      },
+      "required": ["legal_name", "head_office", "regions"],
+      "additionalProperties": false
+    },
+    "key_personnel": {
+      "type": "object",
+      "properties": {
+        "ceo": { "$ref": "#/definitions/person" },
+        "qse_manager": { "$ref": "#/definitions/person" },
+        "operations_manager": { "$ref": "#/definitions/person" },
+        "hr_manager": { "$ref": "#/definitions/person" },
+        "document_controller": { "$ref": "#/definitions/person" },
+        "environmental_manager": { "$ref": "#/definitions/person" },
+        "safety_manager": { "$ref": "#/definitions/person" },
+        "procurement_manager": { "$ref": "#/definitions/person" },
+        "project_managers": { "type": "array", "items": { "$ref": "#/definitions/person" } },
+        "lead_auditors": { "type": "array", "items": { "$ref": "#/definitions/person" } },
+        "hsr_representatives": { "type": "array", "items": { "$ref": "#/definitions/person" } }
+      },
+      "required": ["ceo", "qse_manager", "operations_manager"],
+      "additionalProperties": false
+    },
+    "branding": {
+      "type": "object",
+      "properties": {
+        "letterhead_html": { "type": "string", "description": "Optional HTML snippet for headers" },
+        "signature_block_template": { "type": "string", "description": "Optional default signature block" }
+      },
+      "additionalProperties": false
+    },
+    "corporate_policies": {
+      "type": "object",
+      "properties": {
+        "qse_policy_effective_date": { "type": "string", "format": "date" },
+        "review_cycle_months": { "type": "integer", "minimum": 1 },
+        "policy_approver_role": { "type": "string", "description": "e.g., CEO" }
+      },
+      "required": ["policy_approver_role"],
+      "additionalProperties": false
+    },
+    "compliance": {
+      "type": "object",
+      "properties": {
+        "jurisdictions": { "type": "array", "items": { "type": "string" }, "description": "Legal jurisdictions applicable (e.g., NSW, Federal AU)" },
+        "legal_update_service": { "type": "string", "description": "Name of legal update service (if used)" },
+        "standards_catalogue": { "type": "array", "items": { "type": "string" }, "description": "Key standards observed (ISO 9001/14001/45001, etc.)" }
+      },
+      "required": ["jurisdictions"],
+      "additionalProperties": false
+    },
+    "projects_defaults": {
+      "type": "object",
+      "properties": {
+        "default_year": { "type": "integer" },
+        "objective_plan_year": { "type": "integer" },
+        "value_bands": {
+          "type": "object",
+          "properties": {
+            "small_max": { "type": "number" },
+            "medium_max": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "default_locations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "risk_register": {
+      "type": "object",
+      "properties": {
+        "categories": { "type": "array", "items": { "type": "string" } },
+        "impact_scale": { "type": "array", "items": { "type": "string" } },
+        "likelihood_scale": { "type": "array", "items": { "type": "string" } },
+        "residual_risk_thresholds": { "type": "object", "additionalProperties": { "type": "number" } }
+      },
+      "additionalProperties": false
+    },
+    "audit_program": {
+      "type": "object",
+      "properties": {
+        "planning_year": { "type": "integer" },
+        "default_frequency": { "type": "string", "description": "e.g., Annual/Quarterly" },
+        "high_risk_focus_areas": { "type": "array", "items": { "type": "string" } },
+        "auditors_pool": { "type": "array", "items": { "$ref": "#/definitions/person" } }
+      },
+      "required": ["planning_year"],
+      "additionalProperties": false
+    },
+    "communication": {
+      "type": "object",
+      "properties": {
+        "internal_channels": { "type": "array", "items": { "type": "string" } },
+        "external_channels": { "type": "array", "items": { "type": "string" } },
+        "frequency_options": { "type": "array", "items": { "type": "string" } },
+        "incident_media_policy": { "type": "string", "description": "Who may speak to media; default: CEO only" }
+      },
+      "required": ["incident_media_policy"],
+      "additionalProperties": false
+    },
+    "competence_training": {
+      "type": "object",
+      "properties": {
+        "roles_catalogue": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/role_requirements" },
+          "description": "Map of role name → requirements"
+        },
+        "induction_template_code": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "consultation": {
+      "type": "object",
+      "properties": {
+        "hsc_frequency": { "type": "string", "default": "Quarterly" },
+        "hsc_membership_notes": { "type": "string" },
+        "toolbox_frequency": { "type": "string", "default": "Daily" }
+      },
+      "additionalProperties": false
+    },
+    "documentation_control": {
+      "type": "object",
+      "properties": {
+        "doc_id_prefix": { "type": "string", "description": "Prefix for internal controlled docs, e.g., QSE" },
+        "approval_matrix": { "$ref": "#/definitions/approval_matrix" },
+        "retention_policy_years": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["doc_id_prefix", "approval_matrix"],
+      "additionalProperties": false
+    },
+    "ncr_process": {
+      "type": "object",
+      "properties": {
+        "reporting_system_name": { "type": "string", "description": "Name of safety/NCR system (e.g., SafetyConnect)" },
+        "severity_scale": { "type": "array", "items": { "type": "string" } },
+        "investigation_methods": { "type": "array", "items": { "type": "string" }, "default": ["ICAM", "5-Whys"] }
+      },
+      "additionalProperties": false
+    },
+    "improvement_register": {
+      "type": "object",
+      "properties": {
+        "prioritization_factors": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "monitoring_measurement": {
+      "type": "object",
+      "properties": {
+        "kpis": { "type": "array", "items": { "type": "string" }, "description": "Default KPI set (e.g., TRIFR, LTIFR, NCR closure days)" },
+        "dashboard_url": { "type": "string", "default": "/dashboard" }
+      },
+      "additionalProperties": false
+    },
+    "procurement_supplier": {
+      "type": "object",
+      "properties": {
+        "prequalification_criteria": { "type": "array", "items": { "type": "string" }, "description": "Core supplier prequal criteria" },
+        "high_risk_categories": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["prequalification_criteria"],
+      "additionalProperties": false
+    },
+    "design_control": {
+      "type": "object",
+      "properties": {
+        "internal_design_scope": { "type": "string", "description": "Scope of any in-house/temporary designs" },
+        "independent_verification_required": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+    "environmental_management": {
+      "type": "object",
+      "properties": {
+        "key_areas": { "type": "array", "items": { "type": "string" }, "default": ["Erosion & Sediment Control", "Waste", "Spill Response", "Flora/Fauna"] }
+      },
+      "additionalProperties": false
+    },
+    "whs": {
+      "type": "object",
+      "properties": {
+        "swms_required_for_hrcw": { "type": "boolean", "default": true },
+        "hrcw_examples": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "schedule_templates": {
+      "type": "object",
+      "properties": {
+        "months": { "type": "array", "items": { "type": "string" }, "default": ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"] },
+        "quarters": { "type": "array", "items": { "type": "string" }, "default": ["Q1","Q2","Q3","Q4"] }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string", "default": "1.0.0" },
+        "last_updated": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "company",
+    "key_personnel",
+    "compliance",
+    "audit_program",
+    "documentation_control",
+    "communication",
+    "procurement_supplier"
+  ],
+  "additionalProperties": false
+}
+
+

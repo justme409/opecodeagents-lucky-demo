@@ -7,7 +7,9 @@
     "lib": "lib"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "demo:gemini": "node demo/gemini-file-search-demo.js",
+    "demo:gemini:batch": "node demo/gemini-file-search-batch.js"
   },
   "keywords": [],
   "author": "",

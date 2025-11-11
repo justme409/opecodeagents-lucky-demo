@@ -15,8 +15,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/itp-generation.md"
       ]
@@ -25,11 +26,12 @@
       "description": "Extract project metadata, parties, contracts, and key dates from project documents",
       "output_type": "Project node with comprehensive metadata",
       "agent_id": "PROJECT_DETAILS",
-      "entities": ["Project", "WorkType", "AreaCode"],
+      "entities": ["Project", "ContactList", "Party", "PartyContact"],
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/project-details.md"
       ]
@@ -42,8 +44,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/wbs-extraction.md"
       ]
@@ -56,7 +59,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/lbs-extraction.md"
       ]
@@ -69,8 +74,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/pqp-generation.md"
       ]
@@ -83,8 +89,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/emp-generation.md"
       ]
@@ -97,8 +104,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/ohsmp-generation.md"
       ]
@@ -111,7 +119,8 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/document-metadata.md"
       ]
@@ -124,8 +133,9 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
         "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
         "shared/neo4j reference docs schema.md",
         "prompts/standards-extraction.md"
       ]
@@ -138,7 +148,10 @@
       "files": [
         "shared/instructions.md",
         "shared/connection details.md",
-        "shared/Exploration guide.md",
+        "shared/Writing to Generated DB.md",
+        "shared/neo4j standards schema.md",
+        "shared/neo4j project docs schema.md",
+        "shared/neo4j reference docs schema.md",
         "prompts/qse-generation.md"
       ]
     }
@@ -148,13 +161,14 @@
     "files": [
       "shared/instructions.md",
       "shared/connection details.md",
-      "shared/Exploration guide.md",
+      "shared/Writing to Generated DB.md",
       "shared/neo4j standards schema.md",
+      "shared/neo4j project docs schema.md",
       "shared/neo4j reference docs schema.md"
     ]
   },
   "notes": {
-    "schema_generation": "MASTER_SCHEMA.md and AGENT_SCHEMA.md are dynamically generated from master-schema.ts. The full TypeScript file is never copied to workspaces.",
+    "schema_generation": "AGENT_SCHEMA.md is dynamically generated from master-schema.ts. The full TypeScript file is never copied to workspaces.",
     "database_access": "Agents read from Standards (7687) and Project Docs (7688), write to Generated (7690)",
     "workspace_structure": "Each agent session gets a unique workspace at /app/opencode-workspace/agent-sessions/{session-id}/ with task-specific files and generated schema docs",
     "business_keys": "All entities use business keys (projectId + code/number/docNo) instead of UUIDs for better LLM comprehension"

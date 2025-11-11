@@ -13,6 +13,8 @@ The PQP serves multiple critical functions:
 5. **Records Management** - Defines documentation and record-keeping requirements
 6. **Non-Conformance Management** - Establishes procedures for managing NCRs
 
+The PQP is typically a pre-start contractual deliverable that the Principal treats as a hold point before site mobilisation. Issue the initial plan prior to commencing construction activities, then revise it at each major phase gate or whenever scope changes introduce new work lots, ITPs, or quality risks that warrant updated controls.
+
 ## Regulatory and Standards Context
 
 ### ISO 9001:2016 (AS/NZS ISO 9001)
@@ -108,8 +110,8 @@ Different Australian jurisdictions have specific quality system requirements:
 - Witness point procedures
 - Testing frequencies
 - NATA requirements
-- **Required ITP summary for database** - For every ITP referenced in the PQP, capture sufficient metadata (docNo, workType, specRef, mandatory flag) so it can be written to the ManagementPlan `requiredItps` array.
-- **Non-negotiable:** The `requiredItps` array must never be empty. Exhaust every project source (drawings, specifications, schedules, WBS/lot requirements). If the contract genuinely omits ITP references, synthesize an evidence-based list using best practice and flag each item with `source: "assumed"` inside `additionalNotes`.
+- **Required ITP summary for database** - For every ITP referenced in the PQP, capture exactly the schema fields (`docNo`, `workType`, `mandatory`, optional `specRef`) so it can be written to the ManagementPlan `requiredItps` array.
+- **Non-negotiable:** The `requiredItps` array must never be empty. Exhaust every project source (drawings, specifications, schedules, WBS/lot requirements). If the contract genuinely omits ITP references, synthesize an evidence-based list using best practice and mark each entry as "assumed" inside the PQP narrative or plan notes.
 
 ### Sampling and Testing
 - Test method references
@@ -151,6 +153,8 @@ The PQP should leverage existing corporate QSE (Quality, Safety, Environment) sy
 - Only reference items present in the provided QSE system reference
 - Where no relevant corporate procedure exists, develop project-specific content
 - Indicate which procedures are project-specific vs corporate
+
+Record each adopted corporate procedure by linking or referencing its existing `Document` or `ITPTemplate` node and capture any project-specific supplements inside the plan narrative or plan notes.
 
 ## Content Requirements
 
@@ -217,8 +221,8 @@ You are tasked with generating a comprehensive PQP based on project documentatio
 
 5. **Catalogue every required ITP before drafting content**
    - Build a master list from all sources (contract quality sections, schedules, WBS requirements, testing matrices, appendices).
-   - For each ITP capture: `docNo`, `title/description`, `workType`, `specRef`, `mandatory` (true if contractually required or contains hold points).
-   - Record provenance in `additionalNotes` (e.g., clause references, document IDs, or note "assumed" with reasoning).
+   - For each ITP capture exactly the schema fields (`docNo`, `workType`, `mandatory`, optional `specRef`) so the data aligns with `ManagementPlan.requiredItps`.
+   - Document provenance and any assumed rationale within the PQP narrative, plan notes, or linked source documents rather than adding extra properties to the array.
    - Do not proceed to the narrative sections until the list is complete.
 
 6. **Structure the PQP** according to jurisdictional template:
@@ -241,7 +245,7 @@ You are tasked with generating a comprehensive PQP based on project documentatio
      - `workType` - Work type or discipline the ITP covers
      - `mandatory` - `true` if the ITP is contractually required/has hold points; otherwise `false` (explicitly set `false` instead of omitting the property)
      - `specRef` - Specification or clause reference if available
-     - `additionalNotes` - Source citations or "assumed" rationale when you had to infer the requirement
+    - Capture source citations or any "assumed" rationale within the PQP narrative, plan notes, or supporting documents instead of adding extra array properties.
    - Keep a 1:1 mapping with the ITP register presented in the PQP. The database array and the register in the document must match exactly (same order, same content).
    - If you cannot verify any ITPs after exhaustive searching, escalate by creating a best-practice inferred list with clear assumptions—never leave the array empty.
 
@@ -259,11 +263,12 @@ You are tasked with generating a comprehensive PQP based on project documentatio
 
 Your output must conform to the Management Plan schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Plan metadata (title, revision, jurisdiction, standards)
-- Section structure (hierarchical using parentId)
-- Content blocks (text, bullets, numbered, table, note, link)
-- QSE system references (as links)
-- Cypher CREATE statement format
+- Set `ManagementPlan` core fields (`type: "PQP"`, `title`, `version`, `approvalStatus`, optional `summary`, `notes`).
+- Ensure every node you create includes `projectId`, with `createdAt` and `updatedAt` populated by Cypher when the node is written.
+- Create `DocumentSection` nodes for every PQP heading and subheading. Populate each with (`containerType: "ManagementPlan"`, `containerId` = `elementId(plan)`, `headingNumber`, `heading`, `level`, `orderIndex`, `body` text).
+- Link the structure using `(:ManagementPlan)-[:HAS_SECTION]->(:DocumentSection)` and `(:DocumentSection)-[:HAS_SUBSECTION]->(:DocumentSection)` so that the hierarchy is persisted node-by-node.
+- Reference corporate QSE procedures by citing their existing node identifiers within the narrative and, where applicable, by creating supported relationships (e.g., `REFERENCES_DOCUMENT`, `REFERENCES_STANDARD`).
+- Create a `BELONGS_TO_PROJECT` relationship from each new node (plan and sections) to the corresponding `Project`.
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
 

@@ -2,7 +2,7 @@
 
 ## Context and Purpose
 
-An Occupational Health and Safety Management Plan (OHSMP), also known as a Work Health and Safety Management Plan (WHSMP) or Health and Safety Management Plan (HSMP), is a comprehensive document that describes how health and safety will be managed throughout the project lifecycle. It demonstrates the contractor's commitment to safety and compliance with WHS legislation and project-specific safety requirements.
+An Occupational Health and Safety Management Plan (OHSMP), also known as a Work Health and Safety Management Plan (WHSMP) or Health and Safety Management Plan (HSMP), is a comprehensive document that describes how health and safety will be managed throughout the project lifecycle. It demonstrates the contractor's commitment to safety and compliance with WHS legislation and project-specific safety requirements. This plan must be approved before site establishment and before any high-risk construction work commences so the principal contractor can demonstrate compliance at project kickoff.
 
 The OHSMP serves multiple critical functions:
 
@@ -252,6 +252,8 @@ Specific controls required for:
 
 ## QSE System Integration
 
+Position the OHSMP alongside the PQP and EMP so safety controls, inductions and SWMS link back to corporate QSE dashboards and contract deliverable registers.
+
 The OHSMP should leverage existing corporate QSE system procedures where available:
 
 - Reference corporate safety procedures
@@ -297,6 +299,8 @@ Provide matrices/tables including:
 - Emergency contacts
 - Safety KPIs with targets
 
+Represent each matrix or table as DocumentSection body text (for example, pipe-delimited Markdown) rather than HTML so the data persists directly in nodes.
+
 ## Task Instructions
 
 You are tasked with generating a comprehensive OHSMP based on project documentation:
@@ -338,6 +342,8 @@ You are tasked with generating a comprehensive OHSMP based on project documentat
    - Maintaining links to QSE system items
 
 6. **Write output** to the **Generated Database** (port 7690)
+7. Create the `ManagementPlan` node with `type` = 'OHSMP', populated `projectId`, `title`, `version`, `approvalStatus`, optional `summary`/`notes`, optional `requiredItps`, plus `createdAt` and `updatedAt` timestamps.
+8. For each section, create a `DocumentSection` node (`containerType` = 'ManagementPlan') with `projectId`, `level`, `orderIndex`, `heading`, and `body` plain text, linking to the plan via `[:HAS_SECTION]` and using `[:HAS_SUBSECTION]` for nested structure, and set timestamps and `[:BELONGS_TO_PROJECT]`.
 
 ## Naming Convention
 
@@ -353,10 +359,10 @@ You are tasked with generating a comprehensive OHSMP based on project documentat
 
 Your output must conform to the Management Plan schema. See the output schema file copied to your workspace for the exact structure including:
 
-- Plan metadata (title, revision, jurisdiction, standards)
-- Section structure (hierarchical using parentId)
-- Content blocks (text, bullets, numbered, table, note, link)
-- QSE system references (as links)
+- Plan node fields: `projectId`, `type` ('OHSMP'), `title`, `version`, `approvalStatus`, optional `summary`/`notes`, optional `requiredItps`.
+- Section structure via `DocumentSection` nodes using `level`/`orderIndex`, `heading`, `body`, and the `[:HAS_SECTION]` and `[:HAS_SUBSECTION]` relationships.
+- Section bodies stored as plain text (Markdown permitted) within `DocumentSection.body`; encode lists, tables, matrices and references as text rather than structured blocks.
+- Document QSE references inside section text with clear labels and corporate paths.
 - Cypher CREATE statement format
 
 All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.

@@ -281,30 +281,35 @@ You are tasked with generating a comprehensive EMP based on project documentatio
    - Environmental approvals and conditions
    - Specifications
 
-2. **Query the Standards Database** (port 7687) to understand:
+3. **Query the Standards Database** (port 7687) to understand:
    - Jurisdiction-specific environmental requirements
    - Applicable environmental guidelines
    - Environmental monitoring standards
 
-3. **Analyze documentation** to determine:
+4. **Analyze documentation** to determine:
    - Project-specific environmental risks
    - Environmental approval conditions
    - Sensitive receptors
    - Monitoring requirements
    - Community sensitivities
 
-4. **Structure the EMP** according to jurisdictional template:
+5. **Structure the EMP** according to jurisdictional template:
    - Use QLD template (MRTS51) for Queensland projects
    - Use VIC template for Victoria projects
    - Use WA template for Western Australia projects
    - Use Generic template if no specific jurisdiction applies
 
-5. **Integrate corporate QSE content** by:
+6. **Integrate corporate QSE content** by:
    - Referencing existing corporate environmental procedures
    - Creating project-specific content for site-specific controls
    - Maintaining links to QSE system items
 
-6. **Write output** to the **Generated Database** (port 7690)
+7. **Develop the plan body before writing**:
+   - Build comprehensive, numbered sections that mirror the selected jurisdictional template.
+   - Capture matrices/tables as structured plain text (e.g., tab-separated rows) ready for persistence.
+   - Flag assumptions explicitly where project evidence is absent.
+
+8. **Persist results to Neo4j (port 7690)** – create graph entities described below.
 
 ## Naming Convention
 
@@ -316,15 +321,74 @@ You are tasked with generating a comprehensive EMP based on project documentatio
 
 - Use camelCase consistently throughout
 
-## Output Format
+## Graph Entity Requirements
 
-Your output must conform to the Management Plan schema. See the output schema file copied to your workspace for the exact structure including:
+### ManagementPlan Node (`:ManagementPlan`)
+- `projectId` *(string UUID, required)* – must match the target Project node.
+- `type` *(enum, required)* – set to `'EMP'`.
+- `title` *(string, required)* – formal plan title including project identifier.
+- `version` *(string, required)* – start at `'1.0'` unless source documents specify another revision.
+- `approvalStatus` *(enum, required)* – default to `'draft'` until project evidence states otherwise.
+- `approvedBy`, `approvedDate` *(optional)* – populate only when explicitly provided.
+- `summary` *(string, optional)* – concise executive summary of key environmental controls (plain text).
+- `notes` *(string, optional)* – capture any implementation notes or follow-up actions.
+- `requiredItps` *(array, optional)* – include only when environmental ITPs are contractually mandated. Each entry must contain exactly: `docNo`, `workType`, `mandatory`, `specRef?`. Do not introduce extra fields.
+- `createdAt`, `updatedAt` *(DateTime, required)* – set to `datetime()` at creation; update `updatedAt` on any later edits.
 
-- Plan metadata (title, revision, jurisdiction, standards)
-- Section structure (hierarchical using parentId)
-- Content blocks (text, bullets, numbered, table, note, link)
-- QSE system references (as links)
-- Cypher CREATE statement format
+### DocumentSection Nodes (`:DocumentSection`)
+- Create one node per EMP heading/subheading using `containerType: 'ManagementPlan'` and `containerId = elementId(plan)`.
+- Populate `headingNumber`, `heading`, `level`, `orderIndex`, and `body` with the analyzed content for that section.
+- Maintain hierarchy with `(:ManagementPlan)-[:HAS_SECTION]->(:DocumentSection)` and `(:DocumentSection)-[:HAS_SUBSECTION]->(:DocumentSection)`.
+- Apply `(:DocumentSection)-[:BELONGS_TO_PROJECT]->(:Project)` for traceability.
 
-All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
+### Relationships
+- Create `(:ManagementPlan)-[:BELONGS_TO_PROJECT]->(:Project)` using the same `projectId`.
+- Do not create additional relationship types unless they are defined in `master-schema.ts`.
+
+### Example Cypher Pattern
+
+```cypher
+MATCH (p:Project {projectId: $projectId})
+CREATE (plan:ManagementPlan {
+  projectId: $projectId,
+  type: 'EMP',
+  title: $title,
+  version: COALESCE($version, '1.0'),
+  approvalStatus: COALESCE($approvalStatus, 'draft'),
+  summary: $summary,
+  notes: $notes,
+  requiredItps: COALESCE($requiredItps, []),
+  createdAt: datetime(),
+  updatedAt: datetime(),
+  isDeleted: false
+})
+MERGE (plan)-[:BELONGS_TO_PROJECT]->(p);
+```
+
+Ensure parameter values are derived from the analyzed project evidence before executing the query.
+
+Immediately after creating the plan node, create the required `DocumentSection` nodes and relationships, for example:
+
+```cypher
+WITH plan, p
+UNWIND $sections AS sectionPayload
+CREATE (section:DocumentSection {
+  projectId: $projectId,
+  containerType: 'ManagementPlan',
+  containerId: elementId(plan),
+  headingNumber: sectionPayload.headingNumber,
+  heading: sectionPayload.heading,
+  level: sectionPayload.level,
+  orderIndex: sectionPayload.orderIndex,
+  body: sectionPayload.body,
+  summary: sectionPayload.summary,
+  createdAt: datetime(),
+  updatedAt: datetime(),
+  isDeleted: false
+})
+MERGE (section)-[:BELONGS_TO_PROJECT]->(p)
+MERGE (plan)-[:HAS_SECTION]->(section);
+```
+
+Add `HAS_SUBSECTION` relationships between sections as required to preserve hierarchy.
 

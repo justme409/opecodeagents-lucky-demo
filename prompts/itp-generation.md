@@ -2,13 +2,14 @@
 
 ## Context and Purpose
 
-An Inspection and Test Plan (ITP) is a formal quality assurance document created for a specific project scope. It details all inspections and tests required to demonstrate that the work meets its contractual and regulatory requirements. In practice, an ITP "maps out inspection and testing checkpoints from start to finish" of a process.
+An Inspection and Test Plan (ITP) is a formal quality assurance document created for a specific project scope. It details all inspections and tests required to demonstrate that the work meets its contractual and regulatory requirements. In practice, an ITP "maps out inspection and testing checkpoints from start to finish" of a process. Within this platform, every generated ITP must exist as structured Neo4j data — primarily `ITPTemplate` nodes with linked `InspectionPoint` nodes — so the project team has an auditable quality record.
 
-Under ISO 9001:2016 (AS/NZS ISO 9001) and typical contract Quality Management System (QMS) clauses, contractors must plan and control all production processes. Preparing ITPs is one way to fulfill ISO 9001 Clause 8 (operational planning and control) by documenting who will do each inspection, how it is done, and what the acceptance criteria are.
+Under ISO 9001:2016 (AS/NZS ISO 9001) and typical contract Quality Management System (QMS) clauses, contractors must plan and control all production processes. Preparing ITPs is one way to fulfill ISO 9001 Clause 8 (operational planning and control) by documenting who will do each inspection, how it is done, and what the acceptance criteria are. The template data you create forms part of the compliance evidence reviewed during internal audits and government agency surveillance.
 
 An ITP serves two main purposes:
 1. To confirm that the contractor's in-process controls are effective
 2. To verify that incoming materials and completed work pass specified acceptance criteria
+3. To keep the `ITPTemplate` and `InspectionPoint` graph aligned with contractual obligations, enabling downstream ITP instances and compliance dashboards
 
 ## When Are ITPs Required?
 
@@ -62,8 +63,8 @@ Clear pass/fail criteria. Columns for actual measurement/result, acceptance chec
 ### Responsibilities and Sign-offs
 Identifies who performs/reviews each inspection/test (e.g. "Contractor QC inspector", "Third-party NDT inspector"). Columns for inspector's signature/initials/date, and approving authority's sign-off.
 
-### Hold, Witness, and Review Points
-Columns (H, W, R) for Hold (approval required to proceed), Witness (client may attend), and Review points. All contractual H/W points must be in the ITP.
+### Hold, Witness, and Surveillance/Record Points
+Columns aligned with the schema `type` enumeration: **Hold** (type `hold`, approval required to proceed), **Witness** (type `witness`, client may attend), **Surveillance/Record** (type `surveillance` or `record`, ongoing monitoring or record-only checks). All contractual H/W points must be reflected and mapped to the correct type values.
 
 ## Common ITP Sections
 
@@ -80,26 +81,25 @@ ITPs typically include these sections (where relevant):
 
 You are tasked with generating a detailed ITP based on the project specification documents available in the Neo4j databases. Your process should be:
 
-1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
-   ```cypher
-   MATCH (p:Project) RETURN p.projectId
-   ```
-   This UUID must be included in ALL entities you create.
-
-2. Query the **Standards Database** (port 7687) to understand applicable standards for the jurisdiction and work type
-
-3. Query the **Project Docs Database** (port 7688) to extract:
-   - Specification requirements for the work type
+1. **Get the projectId** - Query the Generated Database to get the Project node and its `projectId`. This UUID must be included in **every** node you create.
+2. Retrieve the relevant standards through the Standards Database to understand jurisdiction-specific clauses that govern the work type.
+3. Retrieve project specifications and contract documents to extract:
+   - Work activities that require inspection
    - Hold and witness points
-   - Acceptance criteria
+   - Acceptance criteria, tolerances, and referenced clauses
    - Test methods and frequencies
-   - Quality requirements
-
-4. Structure the ITP according to the output schema requirements
-
-5. Generate all inspection points with complete details
-
-6. Write the output to the **Generated Database** (port 7690) - **CRITICAL**: All entities MUST include `projectId`
+   - Roles responsible for inspections
+4. Map the findings into the `ITPTemplate` schema:
+   - Set `docNo` using `TEMPLATE-ITP-<ABBREVIATION>`
+   - Populate `description`, `scopeOfWork`, and `workType` using the project scope language
+   - Record the primary controlling specification in `specRef` and any overarching parent specification in `parentSpec`
+   - Derive `jurisdiction` and `agency` from the Project node
+   - Populate `applicableStandards` with the UUIDs or spec identifiers referenced by the template
+   - Set `status` to `"draft"` and `approvalStatus` to `"pending"`
+   - Derive `revisionNumber` and `revisionDate` from the source documents (use the latest revision date); leave approval metadata unset
+   - Always set `createdAt` and `updatedAt` with the current datetime
+5. Translate each inspection/test requirement into `InspectionPoint` nodes linked to the template.
+6. Persist the `ITPTemplate`, related `InspectionPoint` nodes, and required relationships in the Generated Database to maintain a complete quality record.
 
 ## Standards Matching Process
 
@@ -154,15 +154,42 @@ When matching standards:
 - Section names should be returned in Title Case (e.g., `Preliminaries`, `Materials`).
 - Inspection point `sequence` values must increment monotonically across the entire template. Do not restart numbering per section; every inspection point must have a unique sequence.
 
+- `inspectionPoints` must cover the full scope with monotonic `sequence` numbering and linked `InspectionPoint` nodes.
+- Set `createdAt` and `updatedAt` on every node you create (use `datetime()` when writing via Cypher).
+
+## Inspection Point Requirements
+
+Create `InspectionPoint` nodes for each inspection/test row that will appear in the ITP:
+
+- **Parent linkage**: use `parentType: 'template'` and `parentKey: <docNo>` to associate with the template.
+- **Sequence**: assign strictly increasing integers across the entire template (e.g., 1, 2, 3). Maintain ordering when adding new points.
+- **Description and requirement**: store the inspection/test description in `description` and the acceptance criteria or requirement text in `requirement`. Mirror the contractual language precisely.
+- **Type selection**: choose from `hold`, `witness`, `surveillance`, or `record`. Only set `isHoldPoint: true` when the type is `hold`, and `isWitnessPoint: true` when the type is `witness`. For other types, set both booleans to `false`.
+- **Section tagging**: set the `section` field using `preliminaries`, `materials`, `pre_construction`, `construction`, `geometrics`, or `conformance` to match the section structure.
+- **Additional attributes**:
+  - `acceptanceCriteria`: quantitative or qualitative pass/fail thresholds.
+  - `testMethod`: named method or referenced standard clause.
+  - `testFrequency`: explicit frequency (per lot, per pour, etc.).
+  - `standardsRef`: array of standards/spec clauses that require the check.
+  - `responsibleParty`: contractor role accountable for the check.
+  - `status`: set initial value to `'pending'`.
+  - Always include `createdAt` and `updatedAt`.
+
 ## Output Format
 
 **CRITICAL: Node Label and Field Names**
 
 You MUST use these exact names:
 - **Node Label**: `ITPTemplate` (camelCase, NOT `ITP_Template` or `ITP`)
-- **Project Reference**: `projectId` (camelCase, NOT `projectId` or `project_id`)
+- **Project Reference**: `projectId` (camelCase, NOT `ProjectId` or `project_id`)
 - **Relationship**: `[:BELONGS_TO_PROJECT]` pointing to the Project node
 - **All field names**: Use camelCase (e.g., `docNo`, `workType`, `revisionDate`)
+- **Additional Relationships**:
+  - `[:HAS_POINT]` between `ITPTemplate` and each `InspectionPoint`
+  - `[:USES_WORK_TYPE]` to link applicable `WorkType` nodes when data exists
+  - `[:REFERENCES_STANDARD]` to connect templates and inspection points to the standards they rely on
+  - `[:REFERENCES_DOCUMENT]` when the template cites project specifications or drawings
+  - `[:BELONGS_TO_PROJECT]` on every node created for the project, including `InspectionPoint`
 
 Your output must conform to the ITP_Template schema. See the output schema file copied to your workspace for the exact structure including:
 
@@ -172,7 +199,7 @@ Your output must conform to the ITP_Template schema. See the output schema file 
 - Cypher CREATE statement format
 - Validation rules
 
-All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
+All output must be written directly to the Generated Database as Neo4j graph nodes using Cypher queries.
 
 **Example Cypher Pattern**:
 ```cypher
@@ -180,20 +207,50 @@ MATCH (p:Project {projectId: $projectUuid})
 CREATE (itp:ITPTemplate {
   id: randomUUID(),
   projectId: $projectUuid,
-  docNo: "ITP-001",
-  description: "...",
-  workType: "...",
-  specRef: "...",
+  docNo: "TEMPLATE-ITP-PAV",
+  description: "Pavement Construction Quality Controls",
+  workType: "Pavements",
+  specRef: "MRTS18 Standard Specification for Pavement Layers",
+  parentSpec: "Department of Transport and Main Roads Standard Specifications",
   jurisdiction: "QLD, Queensland",
   agency: "Department of Transport and Main Roads",
-  status: "approved",
-  approvalStatus: "approved",
+  applicableStandards: ["AS 1289", "AS 1141"],
+  scopeOfWork: "Granular pavement placement, trimming, and compaction",
+  status: "draft",
+  approvalStatus: "pending",
   revisionNumber: "01",
-  revisionDate: datetime(),
+  revisionDate: date("2024-06-01"),
   createdAt: datetime(),
   updatedAt: datetime()
 })
 CREATE (itp)-[:BELONGS_TO_PROJECT]->(p)
+WITH itp
+CREATE (ip1:InspectionPoint {
+  projectId: itp.projectId,
+  parentType: "template",
+  parentKey: itp.docNo,
+  sequence: 1,
+  description: "VERIFY SUBGRADE LEVEL PRIOR TO PAVEMENT PLACEMENT",
+  requirement: "Survey confirmation within ±10 mm of design level",
+  type: "hold",
+  status: "pending",
+  section: "pre_construction",
+  acceptanceCriteria: "Design level ±10 mm",
+  testMethod: "Survey",
+  testFrequency: "Per Lot",
+  standardsRef: ["MRTS18 Cl 7.2"],
+  isHoldPoint: true,
+  isWitnessPoint: false,
+  responsibleParty: "Contractor (Site Engineer)",
+  createdAt: datetime(),
+  updatedAt: datetime()
+})
+CREATE (itp)-[:HAS_POINT]->(ip1)
+CREATE (ip1)-[:BELONGS_TO_PROJECT]->(p)
+WITH itp, ip1
+MATCH (std:Standard {specId: "MRTS18"})
+MERGE (itp)-[:REFERENCES_STANDARD]->(std)
+MERGE (ip1)-[:REFERENCES_STANDARD]->(std)
 RETURN itp
 ```
 

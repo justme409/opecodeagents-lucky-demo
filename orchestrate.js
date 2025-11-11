@@ -38,7 +38,6 @@ const TASKS = {
   'pqp-generation': { deps: [], priority: 1 },
   'emp-generation': { deps: [], priority: 1 },
   'ohsmp-generation': { deps: [], priority: 1 },
-  'qse-generation': { deps: [], priority: 1 },
   
   // Wave 2: Needs WBS
   'lbs-extraction': { deps: ['wbs-extraction'], priority: 3 },
@@ -344,7 +343,11 @@ async function executeTask(taskName, projectId, options = {}) {
       `projectId: ${projectId}`,
       `workspaceSessionId: ${workspaceSessionId}`,
       `orchestratorSessionId: ${session.id}`,
-      `cd ${workspacePath} && cat prompt.md and follow those instructions`
+      `Steps:`,
+      `1. cd ${workspacePath}`,
+      `2. cat instructions.md`,
+      `3. cat prompt.md`,
+      `4. Follow the instructions in those files exactly.`
     ].join('\n\n');
     
     await request(`${CONFIG.SERVER_URL}/session/${session.id}/message`, {
@@ -364,6 +367,10 @@ async function executeTask(taskName, projectId, options = {}) {
     
     log(`  ✓ Completed: ${displayName} (${result.duration}s)`, 'green');
     log(`    Tools: ${result.stats.toolCount}, Bash: ${result.stats.bashCount}, Files: ${result.stats.fileOps}`, 'blue');
+    if (result.tokens) {
+      const total = result.tokens.input + result.tokens.output + result.tokens.reasoning;
+      log(`    Tokens: ${total.toLocaleString()} (input: ${result.tokens.input.toLocaleString()}, output: ${result.tokens.output.toLocaleString()}, reasoning: ${result.tokens.reasoning.toLocaleString()})`, 'blue');
+    }
     
     return { 
       success: true, 
@@ -372,6 +379,7 @@ async function executeTask(taskName, projectId, options = {}) {
       workspacePath,
       duration: result.duration,
       stats: result.stats,
+      tokens: result.tokens,
       metadataPath,
       projectId,
       context: options.context || null,
@@ -520,6 +528,19 @@ class Orchestrator {
     
     const startTime = Date.now();
     
+    // Ensure project-details runs first and completes before other tasks
+    const projectDetailsIndex = this.taskList.indexOf('project-details');
+    if (projectDetailsIndex !== -1 && this.states['project-details'] === 'pending') {
+      log('Running project-details first to establish project node...', 'cyan');
+      await this.runTask('project-details');
+      
+      if (this.states['project-details'] === 'failed') {
+        log('project-details failed. Continuing with remaining tasks...', 'yellow');
+      } else {
+        log('project-details completed. Starting remaining tasks...', 'green');
+      }
+    }
+    
     while (true) {
       const readyTasks = this.getReadyTasks();
       
@@ -554,6 +575,7 @@ class Orchestrator {
     let totalTools = 0;
     let totalBash = 0;
     let totalFiles = 0;
+    let totalTokens = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
     
     this.taskList.forEach((name) => {
       const state = this.states[name];
@@ -566,6 +588,13 @@ class Orchestrator {
         totalTools += result.stats.toolCount || 0;
         totalBash += result.stats.bashCount || 0;
         totalFiles += result.stats.fileOps || 0;
+        if (result.tokens) {
+          totalTokens.input += result.tokens.input || 0;
+          totalTokens.output += result.tokens.output || 0;
+          totalTokens.reasoning += result.tokens.reasoning || 0;
+          if (result.tokens.cacheRead) totalTokens.cacheRead += result.tokens.cacheRead || 0;
+          if (result.tokens.cacheWrite) totalTokens.cacheWrite += result.tokens.cacheWrite || 0;
+        }
         const sessionInfo = result.sessionId ? `Session: ${result.sessionId}` : 'Session: n/a';
         const workspaceInfo = result.workspaceSessionId ? `Workspace: ${result.workspaceSessionId}` : '';
         const metadataInfo = result.metadataPath ? `Metadata: ${result.metadataPath}` : '';
@@ -587,6 +616,10 @@ class Orchestrator {
     if (completed > 0) {
       log(`\nTotal Stats:`, 'cyan');
       log(`  Tools: ${totalTools}, Bash: ${totalBash}, Files: ${totalFiles}`, 'blue');
+      const totalTokenCount = totalTokens.input + totalTokens.output + totalTokens.reasoning;
+      if (totalTokenCount > 0) {
+        log(`  Tokens: ${totalTokenCount.toLocaleString()} (input: ${totalTokens.input.toLocaleString()}, output: ${totalTokens.output.toLocaleString()}, reasoning: ${totalTokens.reasoning.toLocaleString()})`, 'blue');
+      }
       log(`  Event logs saved to each workspace/session-log.json`, 'blue');
     }
     

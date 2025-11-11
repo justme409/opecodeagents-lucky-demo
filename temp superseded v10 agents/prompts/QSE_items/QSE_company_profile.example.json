@@ -1,0 +1,155 @@
+{
+  "$schema": "./QSE_company_profile.schema.json",
+  "company": {
+    "legal_name": "AustBuild Civil Pty Ltd",
+    "trading_name": "AustBuild Civil",
+    "abn_acn": "ABN 12 345 678 901",
+    "head_office": {
+      "line1": "123 Industry Road",
+      "line2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "Australia"
+    },
+    "phone": "+61 2 9000 0000",
+    "website": "https://www.austbuildcivil.com.au",
+    "logo_url": "https://cdn.example.com/logos/austbuild.png",
+    "industry_sector": "Civil Construction",
+    "typical_project_types": [
+      "Roadworks",
+      "Earthworks",
+      "Drainage",
+      "Utilities"
+    ],
+    "regions": ["NSW", "ACT"],
+    "working_hours_policy": "Mon–Fri 7:00–17:00; Sat by approval"
+  },
+  "key_personnel": {
+    "ceo": { "name": "Jane Smith", "title": "Chief Executive Officer", "email": "jane.smith@austbuildcivil.com.au" },
+    "qse_manager": { "name": "Michael Lee", "title": "QSE Manager", "email": "michael.lee@austbuildcivil.com.au" },
+    "operations_manager": { "name": "Priya Patel", "title": "Operations Manager" },
+    "hr_manager": { "name": "Chris Wong", "title": "HR Manager" },
+    "document_controller": { "name": "Alex Johnson", "title": "Document Controller" },
+    "environmental_manager": { "name": "Sara Green", "title": "Environmental Manager" },
+    "safety_manager": { "name": "Tom Brown", "title": "Safety Manager" },
+    "procurement_manager": { "name": "Leah White", "title": "Procurement Manager" },
+    "project_managers": [
+      { "name": "Peter Parker", "title": "Project Manager" },
+      { "name": "Mary Jones", "title": "Project Manager" }
+    ],
+    "lead_auditors": [
+      { "name": "Kim Tran", "title": "Lead Auditor" }
+    ],
+    "hsr_representatives": [
+      { "name": "Liam King", "title": "HSR" },
+      { "name": "Olivia Hall", "title": "HSR" }
+    ]
+  },
+  "branding": {
+    "letterhead_html": "<div class=\"letterhead\"><img src=\"https://cdn.example.com/logos/austbuild.png\" height=\"40\"/></div>",
+    "signature_block_template": "<div class=\"sig\">_________________________<br/>[CEO Name]<br/>Chief Executive Officer</div>"
+  },
+  "corporate_policies": {
+    "qse_policy_effective_date": "2025-07-01",
+    "review_cycle_months": 12,
+    "policy_approver_role": "CEO"
+  },
+  "compliance": {
+    "jurisdictions": ["Federal AU", "NSW"],
+    "legal_update_service": "LexisNexis",
+    "standards_catalogue": ["ISO 9001:2015", "ISO 14001:2015", "ISO 45001:2018"]
+  },
+  "projects_defaults": {
+    "default_year": 2025,
+    "objective_plan_year": 2025,
+    "value_bands": { "small_max": 2000000, "medium_max": 10000000 },
+    "default_locations": ["Sydney", "Newcastle"]
+  },
+  "risk_register": {
+    "categories": ["Safety", "Quality", "Environment", "Commercial", "Program"],
+    "impact_scale": ["Low", "Medium", "High"],
+    "likelihood_scale": ["Unlikely", "Possible", "Likely"],
+    "residual_risk_thresholds": { "High": 75, "Medium": 40, "Low": 10 }
+  },
+  "audit_program": {
+    "planning_year": 2025,
+    "default_frequency": "Annual",
+    "high_risk_focus_areas": ["WHS High Risk Construction Work", "Environmental compliance"],
+    "auditors_pool": [ { "name": "Kim Tran", "title": "Lead Auditor" } ]
+  },
+  "communication": {
+    "internal_channels": ["Toolbox Talks", "Email", "Intranet"],
+    "external_channels": ["Client Meetings", "Regulator Notifications", "Community Notices"],
+    "frequency_options": ["Daily", "Weekly", "Monthly", "Quarterly"],
+    "incident_media_policy": "Only the CEO may speak to media; all enquiries routed to CEO"
+  },
+  "competence_training": {
+    "roles_catalogue": {
+      "Project Manager": {
+        "essential_qualifications": ["Civil Engineering Degree", "White Card"],
+        "mandatory_training": ["WHS for Managers", "Environmental Awareness"],
+        "refresh_cycle_months": 36
+      },
+      "Site Supervisor": {
+        "essential_qualifications": ["Trade Certificate", "High Risk Work Licenses as required"],
+        "mandatory_training": ["First Aid", "Supervisor WHS"],
+        "refresh_cycle_months": 24
+      }
+    },
+    "induction_template_code": "C-HR-TEMP-001"
+  },
+  "consultation": {
+    "hsc_frequency": "Quarterly",
+    "hsc_membership_notes": "ELT + elected HSRs and worker reps",
+    "toolbox_frequency": "Daily"
+  },
+  "documentation_control": {
+    "doc_id_prefix": "QSE",
+    "approval_matrix": {
+      "policy": "CEO",
+      "procedure": "Operations Manager",
+      "register": "QSE Manager",
+      "form": "QSE Manager",
+      "manual": "CEO"
+    },
+    "retention_policy_years": 7
+  },
+  "ncr_process": {
+    "reporting_system_name": "SafetyConnect",
+    "severity_scale": ["Low", "Medium", "High", "Extreme"],
+    "investigation_methods": ["ICAM", "5-Whys"]
+  },
+  "improvement_register": {
+    "prioritization_factors": ["Impact", "Cost", "Strategic Alignment", "Resource Availability"]
+  },
+  "monitoring_measurement": {
+    "kpis": ["TRIFR", "LTIFR", "NCR Closure Days", "ITP First-Pass"],
+    "dashboard_url": "/dashboard"
+  },
+  "procurement_supplier": {
+    "prequalification_criteria": ["WHS performance & ISO 45001", "ISO 9001", "ISO 14001", "Financial capacity", "Insurance"],
+    "high_risk_categories": ["Demolition", "Asbestos Removal", "Cranes"]
+  },
+  "design_control": {
+    "internal_design_scope": "Minor temporary works only (TMP, formwork, excavation support)",
+    "independent_verification_required": true
+  },
+  "environmental_management": {
+    "key_areas": ["Erosion & Sediment Control", "Waste", "Spill Response", "Noise", "Heritage"]
+  },
+  "whs": {
+    "swms_required_for_hrcw": true,
+    "hrcw_examples": ["Working at Heights", "Excavation", "Confined Space"]
+  },
+  "schedule_templates": {
+    "months": ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+    "quarters": ["Q1","Q2","Q3","Q4"]
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2025-08-12"
+  }
+}
+
+

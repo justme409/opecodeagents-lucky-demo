@@ -13,6 +13,12 @@ The document register serves multiple critical functions:
 5. **Retrieval** - Enables quick location of required documents
 6. **Handover** - Provides complete documentation for project handover
 
+**IMPORTANT:** Extract ONLY document register metadata. Do NOT extract domain content such as:
+- Standards and specifications content
+- Materials, equipment, or quantities
+- Hazards, risks, or requirements
+- Narrative or descriptive content
+
 ## Document Types
 
 ### Drawings
@@ -32,33 +38,31 @@ Technical drawings including:
 - Document number
 - Revision code
 - Title
-- Discipline (Civil, Structural, Electrical, Mechanical, Architectural)
-- Sheet number
-- Total sheets
-- Scale (e.g., 1:100 @A1)
-- Drawing type/subtype
+- Type (drawing)
+- Discipline (civil, structural, electrical, mechanical, architectural, other)
+- Status (draft, in_review, approved, superseded, archived)
 
 ### Documents
 
 Non-drawing documents including:
 
-- **Specifications** - Technical specifications (general spec, technical spec)
+- **Specifications** - Technical specifications
 - **Reports** - Technical reports, test reports
 - **Contracts** - Contract documents, conditions
 - **Correspondence** - Letters, emails
 - **Schedules** - Program schedules, payment schedules
 - **Manuals** - Operation and maintenance manuals
 - **Procedures** - Construction procedures, method statements
+- **Plans** - Management plans, quality plans
 - **Other** - Other document types
 
 **Document Metadata:**
 - Document number
 - Revision code
 - Title
-- Discipline
-- Classification level (internal, confidential, public)
-- Category (specification, report, contract, correspondence, schedule, manual, procedure, other)
-- Subtype (non-prescriptive label inferred from evidence)
+- Type (specification, report, procedure, plan, correspondence, other)
+- Discipline (civil, structural, electrical, mechanical, architectural, other)
+- Status (draft, in_review, approved, superseded, archived)
 
 ## Metadata Fields
 
@@ -68,65 +72,61 @@ Non-drawing documents including:
 - Either "drawing" or "document"
 - Based on evidence in filename and content
 
-**documentNumber** (string or null)
+**documentNumber** (REQUIRED)
 - Unique document identifier
 - Extract from title block or document header
 - Examples: "C-001", "SPEC-123", "DWG-A-101"
 
-**revisionCode** (string or null)
+**revisionCode** (REQUIRED)
 - Revision identifier
 - Common formats: "A", "B", "C" or "R0", "R1", "R2" or "Rev A", "Rev 1"
 - Extract from revision field in title block
+- Default to "A" if not stated
 
-**title** (string or null)
+**title** (REQUIRED)
 - Document title
 - Extract from title field in document
 - Should be concise and descriptive
 
-**discipline** (string or null)
+**type** (REQUIRED)
+- Document type classification
+- Valid values: 'specification' | 'drawing' | 'report' | 'procedure' | 'plan' | 'correspondence' | 'other'
+- Use 'specification' for technical specifications
+- Use 'drawing' for technical drawings
+- Use 'report' for test reports, technical reports, inspection reports
+- Use 'procedure' for method statements, work procedures
+- Use 'plan' for management plans, quality plans
+- Use 'correspondence' for letters, emails, transmittals
+- Use 'other' for contracts, schedules, manuals, and other document types
+
+**status** (REQUIRED)
+- Document status in workflow
+- Valid values: 'draft' | 'in_review' | 'approved' | 'superseded' | 'archived'
+- Default to 'draft' for newly extracted documents
+- Set to 'approved' if document shows approval stamps/signatures
+- Set to 'superseded' if a newer revision exists
+
+**discipline** (optional)
 - Engineering discipline
-- Options: Civil, Structural, Electrical, Mechanical, Architectural, Hydraulic, Geotechnical
+- Valid values: 'civil' | 'structural' | 'electrical' | 'mechanical' | 'architectural' | 'other'
+- Use lowercase values exactly as shown
+- Use 'other' for disciplines like hydraulic, geotechnical, surveying, etc.
 - Extract from discipline field or infer from content
 
-**classificationLevel** (string or null)
-- Security/confidentiality classification
-- Common values: Internal, Confidential, Public, Commercial in Confidence
-- Default to "Internal" if not stated
+### Optional Fields
 
-### Drawing-Specific Fields
+**issueDate** (optional Date)
+- Date the document was issued or approved
+- Extract from document header, title block, or approval section
+- Format as ISO 8601 date string (YYYY-MM-DD)
 
-**sheetNumber** (string or null)
-- Sheet number within document set
-- Example: "1", "2 of 10", "A-101"
+**fileUrl** (optional)
+- URL or path to the document file
+- Will be automatically populated by the system where available
 
-**totalSheets** (integer or null)
-- Total number of sheets in document set
-- Extract from "Sheet X of Y" notation
-
-**scale** (string or null)
-- Drawing scale
-- Examples: "1:100 @A1", "1:50", "NTS" (not to scale), "As shown"
-
-### Document-Specific Fields
-
-**category** (string or null)
-- High-level document category
-- Options: specification, report, contract, correspondence, schedule, manual, procedure, other
-
-**subtype** (string or null)
-- More specific document type
-- Non-prescriptive label inferred from evidence
-- Examples for documents: generalSpec, technicalSpec, methodStatement, contractConditions
-- Examples for drawings: generalArrangement, section, elevation, detail, plan, schedule, diagram, layout
-
-### Additional Fields
-
-**additionalFields** (JSON string or null)
-- Additional metadata not covered by standard fields
-- Must be a valid JSON object encoded as a string
-- Example: `"{\"edition\":\"3rd\",\"issuingBody\":\"TfNSW\"}"`
-- Do NOT return structured objects - return a string
-- Common fields: edition, issuingBody, preparedBy, approvedBy, dateIssued
+**fileName** (optional)
+- Original filename of the document
+- Extract from the file being processed
 
 ## Extraction Guidelines
 
@@ -181,102 +181,93 @@ If multiple distinct items are present (e.g., multiple drawings or appended docu
 
 ## Discipline Inference
 
-When discipline is not explicitly stated, infer from:
+When discipline is not explicitly stated, infer from content and use lowercase values:
 
-**Civil:**
+**'civil':**
 - Roads, earthworks, pavements
 - Drainage, stormwater
 - Site works, retaining walls
 
-**Structural:**
+**'structural':**
 - Structural frames, beams, columns
 - Foundations, footings
 - Reinforcement details
 
-**Architectural:**
+**'architectural':**
 - Building layouts, floor plans
 - Elevations, facades
 - Interior finishes
 
-**Electrical:**
+**'electrical':**
 - Electrical systems, lighting
 - Power distribution
 - Cable schedules
 
-**Mechanical:**
+**'mechanical':**
 - HVAC systems
 - Plumbing, fire services
 - Mechanical equipment
 
-**Hydraulic:**
-- Water supply, sewer
-- Pumping systems
-- Hydraulic structures
-
-## Category and Subtype Inference
-
-### Specification Documents
-
-**Category:** specification
-
-**Subtypes:**
-- generalSpec - General specifications
-- technicalSpec - Technical/detailed specifications
-- performanceSpec - Performance-based specifications
-
-### Report Documents
-
-**Category:** report
-
-**Subtypes:**
-- testReport - Laboratory test reports
-- technicalReport - Engineering analysis reports
-- inspectionReport - Inspection and audit reports
-- surveyReport - Survey reports
-
-### Contract Documents
-
-**Category:** contract
-
-**Subtypes:**
-- contractConditions - General and special conditions
-- contractSchedule - Contract schedules
-- tenderDocuments - Tender documentation
+**'other':**
+- Hydraulic (water supply, sewer, pumping systems)
+- Geotechnical (soil investigations, foundation studies)
+- Surveying (site surveys, setting out)
+- Any other specialized disciplines not explicitly listed above
 
 ## Task Instructions
 
-You are tasked with extracting document metadata from project files:
+You are an autonomous agent tasked with extracting document metadata from project files.
 
-1. **Get the projectId** - Query the Generated Database (port 7690) to get the Project node and its `projectId`:
-   ```cypher
-   MATCH (p:Project) RETURN p.projectId
-   ```
-   This UUID must be included in ALL Document entities you create.
+### Your Responsibilities
 
-2. **Query the Project Docs Database** (port 7688) to access:
-   - Document files and content
-   - Filenames
-   - Existing partial metadata
+1. **Retrieve the projectId** - Get the Project node's `projectId` UUID from the database
 
-3. **Analyze each document** to determine:
-   - Whether it's a drawing or non-drawing document
-   - Extract all available metadata fields
+2. **Access source documents** - Query available document files and their content
+
+3. **Extract metadata** for each document:
+   - Classify as drawing or document (set `docKind`)
+   - Extract all available metadata fields per the schema
    - Infer missing fields where evidence exists
-   - Set null for fields without evidence
+   - Set appropriate defaults (e.g., `status: 'draft'`)
+   - Leave optional fields null when no evidence exists
 
-3. **Classify systematically**:
-   - Determine docKind first
-   - Extract core fields
-   - Extract type-specific fields (drawing vs document)
-   - Compile additionalFields if present
+4. **Create Document nodes** in the database:
+   - Use the `Document` node label
+   - Include all required fields: `projectId`, `documentNumber`, `revisionCode`, `docKind`, `title`, `type`, `status`
+   - Include optional fields where data was extracted
+   - Set `createdAt` and `updatedAt` timestamps
+   - Create `[:BELONGS_TO_PROJECT]` relationship to the Project node
 
-4. **Validate extraction**:
-   - Ensure docKind is set
-   - Check that drawing-specific fields are only set for drawings
-   - Verify additionalFields is a valid JSON string (not object)
-   - Confirm all values have supporting evidence
+### Example Node Structure
 
-5. **Write output** to the **Generated Database** (port 7690)
+```cypher
+CREATE (d:Document {
+  projectId: $projectId,
+  documentNumber: "DWG-C-001",
+  revisionCode: "B",
+  docKind: "drawing",
+  title: "Site General Arrangement",
+  type: "drawing",
+  discipline: "civil",
+  status: "approved",
+  issueDate: datetime("2024-01-15"),
+  fileName: "site-ga-rev-b.pdf",
+  createdAt: datetime(),
+  updatedAt: datetime(),
+  isDeleted: false
+})
+```
+
+### Validation Checklist
+
+- [ ] `projectId` is set and matches the Project node
+- [ ] `documentNumber` is unique and descriptive
+- [ ] `docKind` is either 'drawing' or 'document'
+- [ ] `type` uses valid enum value from schema
+- [ ] `discipline` uses valid lowercase enum value (if set)
+- [ ] `status` is set (default to 'draft')
+- [ ] All field names use camelCase
+- [ ] All values have supporting evidence from the document
 
 ## Naming Convention
 
@@ -290,13 +281,22 @@ You are tasked with extracting document metadata from project files:
 
 ## Output Format
 
-Your output must conform to the Document schema. See the output schema file copied to your workspace for the exact structure including:
+Your output must conform to the Document schema from `master-schema.ts`:
 
-- Node labels and properties (use camelCase for all field names)
-- Required vs optional fields
-- Field data types
-- Validation rules
-- Cypher CREATE statement format
+**Required fields:**
+- `projectId` (string UUID)
+- `documentNumber` (string)
+- `revisionCode` (string)
+- `docKind` ('drawing' | 'document')
+- `title` (string)
+- `type` ('specification' | 'drawing' | 'report' | 'procedure' | 'plan' | 'correspondence' | 'other')
+- `status` ('draft' | 'in_review' | 'approved' | 'superseded' | 'archived')
 
-All output must be written directly to the Generated Database (port 7690) as Neo4j graph nodes using Cypher queries.
+**Optional fields:**
+- `discipline` ('civil' | 'structural' | 'electrical' | 'mechanical' | 'architectural' | 'other')
+- `issueDate` (Date)
+- `fileUrl` (string)
+- `fileName` (string)
+
+All output must be written as Neo4j Document nodes with proper relationships to the Project node.
 

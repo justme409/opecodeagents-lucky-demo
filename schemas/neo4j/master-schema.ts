@@ -89,9 +89,7 @@ export interface AreaCodeNode {
 }
 
 export const AreaCodeMetadata: EntityMetadata = {
-  createdBy: [
-    { agent: 'project-details', prompt: '@prompts/project-details.md' },
-  ],
+  createdBy: [],
   displayedOn: [
     '/projects/[projectId]/settings',
     '/projects/[projectId]/lots',
@@ -317,6 +315,147 @@ export const DOCUMENT_QUERIES = {
 // ----------------------------------------------------------------------------
 
 /**
+ * DOCUMENT SECTION
+ * Structured section belonging to documents or management plans
+ */
+export const DOCUMENT_SECTION_CONTAINER_TYPES = [
+  'Document',
+  'ManagementPlan',
+] as const;
+
+export type DocumentSectionContainerType = typeof DOCUMENT_SECTION_CONTAINER_TYPES[number];
+
+export interface DocumentSectionNode {
+  projectId: string;  // Foreign key to Project
+  containerType: DocumentSectionContainerType;
+  containerId?: string;
+  containerKey?: string;
+  headingNumber?: string;
+  heading?: string;
+  level: number;
+  orderIndex: number;
+  body: string;
+  summary?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const DocumentSectionMetadata: EntityMetadata = {
+  createdBy: [
+    { agent: 'pqp-generation', prompt: '@prompts/pqp-generation.md' },
+    { agent: 'ohsmp-generation', prompt: '@prompts/ohsmp-generation.md' },
+    { agent: 'emp-generation', prompt: '@prompts/emp-generation.md' },
+  ],
+  displayedOn: [
+    '/projects/[projectId]/management-plans/[planId]',
+    '/projects/[projectId]/documents/[docId]',
+  ],
+  relationships: {
+    outgoing: [
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Section belongs to project' },
+      { type: 'HAS_SUBSECTION', target: 'DocumentSection', description: 'Section has nested subsection' },
+    ],
+    incoming: [
+      { type: 'HAS_SECTION', source: 'ManagementPlan', description: 'Plan has section' },
+      { type: 'HAS_SECTION', source: 'Document', description: 'Document has section' },
+      { type: 'HAS_SUBSECTION', source: 'DocumentSection', description: 'Parent section links to child section' },
+    ],
+  },
+};
+
+export const DocumentSectionSchema = z.object({
+  projectId: z.string(),
+  containerType: z.enum(DOCUMENT_SECTION_CONTAINER_TYPES),
+  containerId: z.string().optional(),
+  containerKey: z.string().optional(),
+  headingNumber: z.string().optional(),
+  heading: z.string().optional(),
+  level: z.number(),
+  orderIndex: z.number(),
+  body: z.string(),
+  summary: z.string().optional(),
+});
+
+export const CreateDocumentSectionInputSchema = z.object({
+  containerType: z.enum(DOCUMENT_SECTION_CONTAINER_TYPES),
+  containerId: z.string().optional(),
+  containerKey: z.string().optional(),
+  headingNumber: z.string().optional(),
+  heading: z.string().optional(),
+  level: z.number(),
+  orderIndex: z.number(),
+  body: z.string(),
+  summary: z.string().optional(),
+});
+
+export type CreateDocumentSectionInput = z.infer<typeof CreateDocumentSectionInputSchema>;
+
+export const UpdateDocumentSectionInputSchema = z.object({
+  containerId: z.string().optional(),
+  containerKey: z.string().optional(),
+  headingNumber: z.string().optional(),
+  heading: z.string().optional(),
+  level: z.number().optional(),
+  orderIndex: z.number().optional(),
+  body: z.string().optional(),
+  summary: z.string().optional(),
+});
+
+export type UpdateDocumentSectionInput = z.infer<typeof UpdateDocumentSectionInputSchema>;
+
+export const DOCUMENT_SECTION_QUERIES = {
+  getSectionsForPlan: `
+    MATCH (plan:ManagementPlan {projectId: $projectId, id: $planId})-[:HAS_SECTION]->(section:DocumentSection)
+    WHERE COALESCE(section.isDeleted, false) = false
+    RETURN section
+    ORDER BY section.level, section.orderIndex
+  `,
+  getSectionsForDocument: `
+    MATCH (doc:Document {projectId: $projectId, documentNumber: $documentNumber})-[:HAS_SECTION]->(section:DocumentSection)
+    WHERE COALESCE(section.isDeleted, false) = false
+    RETURN section
+    ORDER BY section.level, section.orderIndex
+  `,
+  createSection: `
+    MATCH (project:Project {projectId: $projectId})
+    CREATE (section:DocumentSection {
+      projectId: $projectId,
+      containerType: $properties.containerType,
+      containerId: $properties.containerId,
+      containerKey: $properties.containerKey,
+      headingNumber: $properties.headingNumber,
+      heading: $properties.heading,
+      level: $properties.level,
+      orderIndex: $properties.orderIndex,
+      body: $properties.body,
+      summary: $properties.summary,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (section)-[:BELONGS_TO_PROJECT]->(project)
+    RETURN section
+  `,
+  updateSection: `
+    MATCH (section:DocumentSection {projectId: $projectId, id: $sectionId})
+    WHERE COALESCE(section.isDeleted, false) = false
+    SET section += $properties,
+        section.updatedAt = datetime()
+    RETURN section
+  `,
+  deleteSection: `
+    MATCH (section:DocumentSection {projectId: $projectId, id: $sectionId})
+    WHERE COALESCE(section.isDeleted, false) = false
+    SET section.isDeleted = true,
+        section.updatedAt = datetime()
+    RETURN section
+  `,
+};
+
+// ----------------------------------------------------------------------------
+
+/**
  * INSPECTION POINT
  * Individual inspection/test points within ITPs
  */
@@ -404,6 +543,180 @@ export const INSPECTION_POINT_QUERIES = {
     SET ip += $properties
     MERGE (ip)-[:BELONGS_TO_PROJECT]->(p)
     RETURN ip
+  `,
+};
+
+// ----------------------------------------------------------------------------
+
+/**
+ * INSPECTION REQUEST
+ * Requests to inspect specific lots/points with SLA tracking
+ */
+export interface InspectionRequestNode {
+  projectId: string;
+  checkpointId: string;
+  name: string;
+  description?: string;
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected';
+  approvalState?: 'not_required' | 'pending_review' | 'approved' | 'rejected' | 'changes_requested';
+  slaHours?: number;
+  scheduledAt?: Date;
+  slaDueAt?: Date;
+  requestedForAt?: Date;
+  lotNumber?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const InspectionRequestSchema = z.object({
+  projectId: z.string(),
+  checkpointId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  status: z.enum(['draft', 'pending_review', 'approved', 'rejected']).default('draft'),
+  approvalState: z.enum(['not_required', 'pending_review', 'approved', 'rejected', 'changes_requested']).default('not_required'),
+  slaHours: z.number().optional(),
+  scheduledAt: z.coerce.date().optional(),
+  slaDueAt: z.coerce.date().optional(),
+  requestedForAt: z.coerce.date().optional(),
+  lotNumber: z.string().optional(),
+});
+
+export const CreateInspectionRequestInputSchema = z.object({
+  projectId: z.string(),
+  checkpointId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  slaHours: z.number().optional(),
+  scheduledAt: z.coerce.date().optional(),
+  slaDueAt: z.coerce.date().optional(),
+  lotNodeId: z.string().optional(),
+  inspectionPointNodeIds: z.array(z.string()).optional(),
+});
+
+export const INSPECTION_REQUEST_QUERIES = {
+  listByProject: `
+    MATCH (ir:InspectionRequest {projectId: $projectId})
+    WHERE COALESCE(ir.isDeleted, false) = false
+      AND ($status IS NULL OR ir.status = $status)
+    OPTIONAL MATCH (ir)-[:FOR_LOT]->(lot:Lot)
+    OPTIONAL MATCH (ir)-[:REQUESTS_POINT]->(point:InspectionPoint)
+    WITH ir,
+         collect(DISTINCT lot) AS lots,
+         collect(DISTINCT point) AS points
+    ORDER BY ir.createdAt DESC
+    SKIP $offset
+    LIMIT $limit
+    RETURN ir {
+      .* ,
+      id: toString(id(ir)),
+      lot: CASE
+        WHEN size(lots) = 0 THEN NULL
+        ELSE lots[0] { .* , id: toString(id(lots[0])) }
+      END,
+      inspectionPointIds: [p IN points | toString(id(p))],
+      inspectionPoints: [p IN points | p { .* , id: toString(id(p)) }]
+    }
+  `,
+  findById: `
+    MATCH (ir:InspectionRequest)
+    WHERE COALESCE(ir.isDeleted, false) = false AND id(ir) = toInteger($id)
+    OPTIONAL MATCH (ir)-[:FOR_LOT]->(lot:Lot)
+    OPTIONAL MATCH (ir)-[:REQUESTS_POINT]->(point:InspectionPoint)
+    WITH ir,
+         collect(DISTINCT lot) AS lots,
+         collect(DISTINCT point) AS points
+    RETURN ir {
+      .* ,
+      id: toString(id(ir)),
+      lot: CASE
+        WHEN size(lots) = 0 THEN NULL
+        ELSE lots[0] { .* , id: toString(id(lots[0])) }
+      END,
+      inspectionPointIds: [p IN points | toString(id(p))],
+      inspectionPoints: [p IN points | p { .* , id: toString(id(p)) }]
+    }
+  `,
+  create: `
+    MATCH (p:Project {projectId: $projectId})
+    CREATE (ir:InspectionRequest {
+      projectId: $projectId,
+      checkpointId: $checkpointId,
+      name: $name,
+      description: $description,
+      status: COALESCE($status, 'draft'),
+      approvalState: COALESCE($approvalState, 'not_required'),
+      slaHours: $slaHours,
+      scheduledAt: CASE WHEN $scheduledAt IS NULL THEN NULL ELSE datetime($scheduledAt) END,
+      slaDueAt: CASE WHEN $slaDueAt IS NULL THEN NULL ELSE datetime($slaDueAt) END,
+      requestedForAt: CASE WHEN $requestedForAt IS NULL THEN NULL ELSE datetime($requestedForAt) END,
+      lotNodeId: CASE WHEN $lotNodeId IS NULL THEN NULL ELSE toString($lotNodeId) END,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (ir)-[:BELONGS_TO_PROJECT]->(p)
+    WITH ir
+    CALL {
+      WITH ir
+      OPTIONAL MATCH (lot:Lot)
+      WHERE $lotNodeId IS NOT NULL AND id(lot) = toInteger($lotNodeId)
+      FOREACH (_ IN CASE WHEN lot IS NULL THEN [] ELSE [1] END |
+        MERGE (ir)-[:FOR_LOT]->(lot)
+        SET ir.lotNumber = lot.number,
+            ir.lotNodeId = toString(id(lot))
+      )
+      RETURN COUNT(*) AS _
+    }
+    CALL {
+      WITH ir
+      UNWIND COALESCE($inspectionPointNodeIds, []) AS pointId
+      MATCH (point:InspectionPoint)
+      WHERE id(point) = toInteger(pointId)
+      MERGE (ir)-[:REQUESTS_POINT]->(point)
+      RETURN COUNT(*) AS _
+    }
+    WITH ir
+    OPTIONAL MATCH (ir)-[:FOR_LOT]->(lot:Lot)
+    OPTIONAL MATCH (ir)-[:REQUESTS_POINT]->(point:InspectionPoint)
+    WITH ir,
+         collect(DISTINCT lot) AS lots,
+         collect(DISTINCT point) AS points
+    RETURN ir {
+      .* ,
+      id: toString(id(ir)),
+      lot: CASE
+        WHEN size(lots) = 0 THEN NULL
+        ELSE lots[0] { .* , id: toString(id(lots[0])) }
+      END,
+      inspectionPointIds: [p IN points | toString(id(p))],
+      inspectionPoints: [p IN points | p { .* , id: toString(id(p)) }]
+    }
+  `,
+  update: `
+    MATCH (ir:InspectionRequest)
+    WHERE COALESCE(ir.isDeleted, false) = false AND id(ir) = toInteger($id)
+    SET ir += {
+      status: COALESCE($status, ir.status),
+      approvalState: COALESCE($approvalState, ir.approvalState),
+      description: COALESCE($description, ir.description),
+      slaHours: COALESCE($slaHours, ir.slaHours),
+      scheduledAt: CASE WHEN $scheduledAt IS NULL THEN ir.scheduledAt ELSE datetime($scheduledAt) END,
+      slaDueAt: CASE WHEN $slaDueAt IS NULL THEN ir.slaDueAt ELSE datetime($slaDueAt) END,
+      updatedAt: datetime()
+    }
+    RETURN ir { .* , id: toString(id(ir)) }
+  `,
+  clearRelationships: `
+    MATCH (ir:InspectionRequest)
+    WHERE id(ir) = toInteger($id)
+    OPTIONAL MATCH (ir)-[rel:FOR_LOT]->(:Lot)
+    DELETE rel
+    WITH ir
+    OPTIONAL MATCH (ir)-[rel:REQUESTS_POINT]->(:InspectionPoint)
+    DELETE rel
+    RETURN ir { .* , id: toString(id(ir)) }
   `,
 };
 
@@ -651,27 +964,76 @@ export const ITP_TEMPLATE_QUERIES = {
   `,
   createTemplate: `
     MATCH (p:Project {projectId: $projectId})
-    CREATE (t:ITPTemplate {
-      projectId: $projectId,
-      docNo: $docNo,
-      description: $description,
-      workType: $workType,
-      specRef: $specRef,
-      jurisdiction: $jurisdiction,
-      agency: $agency,
-      applicableStandards: $applicableStandards,
-      scopeOfWork: $scopeOfWork,
-      status: coalesce($status, 'draft'),
-      approvalStatus: coalesce($approvalStatus, 'pending'),
-      revisionDate: $revisionDate,
-      revisionNumber: $revisionNumber,
-      approvedBy: $approvedBy,
-      approvedDate: $approvedDate,
-      notes: $notes,
-      createdAt: datetime(),
-      updatedAt: datetime(),
-      isDeleted: false
+    WITH
+      p,
+      trim($docNo) AS docNo,
+      CASE
+        WHEN trim(COALESCE($scopeOfWork, '')) <> '' THEN trim($scopeOfWork)
+        WHEN trim(COALESCE($description, '')) <> '' THEN trim($description)
+        ELSE trim($docNo)
+      END AS normalizedScope,
+      $description AS description,
+      $workType AS workType,
+      $specRef AS specRef,
+      $parentSpec AS parentSpec,
+      $jurisdiction AS jurisdiction,
+      $agency AS agency,
+      $applicableStandards AS applicableStandards,
+      $status AS status,
+      $approvalStatus AS approvalStatus,
+      $revisionDate AS revisionDate,
+      $revisionNumber AS revisionNumber,
+      $approvedBy AS approvedBy,
+      $approvedDate AS approvedDate,
+      $notes AS notes
+    MERGE (t:ITPTemplate {
+      projectId: p.projectId,
+      docNo: docNo,
+      scopeOfWork: normalizedScope
     })
+    ON CREATE SET
+      t.id = coalesce($id, randomUUID()),
+      t.createdAt = datetime(),
+      t.isDeleted = false,
+      t.description = description,
+      t.workType = workType,
+      t.specRef = specRef,
+      t.parentSpec = parentSpec,
+      t.jurisdiction = jurisdiction,
+      t.agency = agency,
+      t.applicableStandards = COALESCE(applicableStandards, []),
+      t.status = coalesce(status, 'draft'),
+      t.approvalStatus = coalesce(approvalStatus, 'pending'),
+      t.revisionDate = revisionDate,
+      t.revisionNumber = revisionNumber,
+      t.approvedBy = approvedBy,
+      t.approvedDate = approvedDate,
+      t.notes = notes,
+      t.updatedAt = datetime()
+    ON MATCH SET
+      t.isDeleted = false,
+      t.updatedAt = datetime(),
+      t.description = description,
+      t.workType = workType,
+      t.specRef = specRef,
+      t.parentSpec = parentSpec,
+      t.jurisdiction = jurisdiction,
+      t.agency = agency,
+      t.applicableStandards = CASE
+        WHEN applicableStandards IS NULL THEN t.applicableStandards
+        ELSE applicableStandards
+      END,
+      t.status = coalesce(status, t.status),
+      t.approvalStatus = coalesce(approvalStatus, t.approvalStatus),
+      t.revisionDate = revisionDate,
+      t.revisionNumber = revisionNumber,
+      t.approvedBy = approvedBy,
+      t.approvedDate = approvedDate,
+      t.notes = CASE
+        WHEN notes IS NULL THEN t.notes
+        ELSE notes
+      END,
+      t.scopeOfWork = normalizedScope
     MERGE (t)-[:BELONGS_TO_PROJECT]->(p)
     RETURN t
   `,
@@ -697,9 +1059,7 @@ export interface LaboratoryNode {
 }
 
 export const LaboratoryMetadata: EntityMetadata = {
-  createdBy: [
-    { agent: 'project-details', prompt: '@prompts/project-details.md' },
-  ],
+  createdBy: [],
   displayedOn: [
     '/projects/[projectId]/settings',
     '/projects/[projectId]/testing/samples',
@@ -860,12 +1220,15 @@ export const LotSchema = z.object({
   startChainage: z.number(),
   endChainage: z.number(),
   startDate: z.coerce.date(),
+  templateDocNo: z.string().optional(),
+  indicativeConformance: z.record(z.any()).optional(),
   notes: z.string().optional(),
 });
 
 export const CreateLotInputSchema = z.object({
   number: z.string(),
   description: z.string(),
+  templateDocNo: z.string(),
   workType: z.string(),
   areaCode: z.string(),
   status: LotStatusEnum.default('open'),
@@ -973,24 +1336,130 @@ export const LOT_QUERIES = {
   `,
   createLot: `
     MATCH (p:Project {projectId: $projectId})
+    MATCH (template:ITPTemplate {projectId: $projectId, docNo: $templateDocNo})
+    MATCH (area:LBSNode {projectId: $projectId, code: $areaCode})
     CREATE (l:Lot {
       projectId: $projectId,
       number: $number,
       status: coalesce($status, 'open'),
       percentComplete: coalesce($percentComplete, 0),
       description: $description,
-      workType: $workType,
+      workType: CASE
+        WHEN $workType IS NULL OR trim($workType) = '' THEN template.workType
+        ELSE $workType
+      END,
       areaCode: $areaCode,
-      startChainage: $startChainage,
-      endChainage: $endChainage,
+      startChainage: coalesce($startChainage, area.chainageStart),
+      endChainage: coalesce($endChainage, area.chainageEnd),
       startDate: $startDate,
+      templateDocNo: template.docNo,
       notes: $notes,
       createdAt: datetime(),
       updatedAt: datetime(),
       isDeleted: false
     })
     MERGE (l)-[:BELONGS_TO_PROJECT]->(p)
+    MERGE (l)-[:LOCATED_IN]->(area)
+    WITH l, p, template
+    CREATE (instance:ITPInstance {
+      projectId: $projectId,
+      lotNumber: $number,
+      templateDocNo: template.docNo,
+      status: 'pending',
+      startDate: $startDate,
+      createdAt: datetime(),
+      updatedAt: datetime(),
+      isDeleted: false
+    })
+    MERGE (instance)-[:BELONGS_TO_PROJECT]->(p)
+    MERGE (instance)-[:FOR_LOT]->(l)
+    MERGE (l)-[:IMPLEMENTS]->(instance)
+    MERGE (instance)-[:INSTANCE_OF]->(template)
     RETURN l
+  `,
+  getLotRegister: `
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    WHERE COALESCE(l.isDeleted, false) = false
+    OPTIONAL MATCH (l)-[:IMPLEMENTS]->(inst:ITPInstance)
+    OPTIONAL MATCH (inst)-[:INSTANCE_OF]->(template:ITPTemplate)
+    OPTIONAL MATCH (inst)-[:HAS_POINT]->(ip:InspectionPoint)
+    OPTIONAL MATCH (l)<-[:FOR_LOT]-(test:TestRequest)
+    OPTIONAL MATCH (l)-[:LOCATED_IN]->(area:LBSNode)
+    WITH l, inst, template, collect(DISTINCT ip) AS ips, collect(DISTINCT test) AS tests, area
+    WITH {
+      lotAssetId: toString(id(l)),
+      lotName: coalesce(l.description, l.number),
+      lotNumber: l.number,
+      lotStatus: l.status,
+      templateDocNo: l.templateDocNo,
+      itpInstanceId: CASE WHEN inst IS NULL THEN NULL ELSE toString(id(inst)) END,
+      locationCode: area.code,
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+      inspectionPoints: [ip IN ips |
+        {
+          inspectionPointId: toString(id(ip)),
+          code: coalesce(ip.code, toString(ip.sequence)),
+          title: coalesce(ip.description, ip.requirement),
+          pointType: ip.type,
+          slaDueAt: coalesce(ip.slaDueAt, ip.sla_due_at, NULL),
+          releasedAt: coalesce(ip.releasedAt, ip.released_at, NULL),
+          approvalState: coalesce(ip.status, ip.approvalState, 'pending'),
+          notifiedAt: coalesce(ip.notifiedAt, ip.notified_at, NULL)
+        }
+      ],
+      testResults: [t IN tests |
+        {
+          testId: toString(id(t)),
+          number: t.number,
+          status: coalesce(t.status, 'pending'),
+          requestedAt: coalesce(t.requestedAt, t.createdAt, t.updatedAt)
+        }
+      ]
+    } AS lot
+    RETURN lot
+    ORDER BY lot.lotNumber
+  `,
+  getLotRegisterById: `
+    MATCH (p:Project {projectId: $projectId})<-[:BELONGS_TO_PROJECT]-(l:Lot)
+    WHERE id(l) = toInteger($lotId) AND COALESCE(l.isDeleted, false) = false
+    OPTIONAL MATCH (l)-[:IMPLEMENTS]->(inst:ITPInstance)
+    OPTIONAL MATCH (inst)-[:INSTANCE_OF]->(template:ITPTemplate)
+    OPTIONAL MATCH (inst)-[:HAS_POINT]->(ip:InspectionPoint)
+    OPTIONAL MATCH (l)<-[:FOR_LOT]-(test:TestRequest)
+    OPTIONAL MATCH (l)-[:LOCATED_IN]->(area:LBSNode)
+    WITH l, inst, template, collect(DISTINCT ip) AS ips, collect(DISTINCT test) AS tests, area
+    RETURN {
+      lotAssetId: toString(id(l)),
+      lotName: coalesce(l.description, l.number),
+      lotNumber: l.number,
+      lotStatus: l.status,
+      templateDocNo: l.templateDocNo,
+      itpInstanceId: CASE WHEN inst IS NULL THEN NULL ELSE toString(id(inst)) END,
+      locationCode: area.code,
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+      inspectionPoints: [ip IN ips |
+        {
+          inspectionPointId: toString(id(ip)),
+          code: coalesce(ip.code, toString(ip.sequence)),
+          title: coalesce(ip.description, ip.requirement),
+          pointType: ip.type,
+          slaDueAt: coalesce(ip.slaDueAt, ip.sla_due_at, NULL),
+          releasedAt: coalesce(ip.releasedAt, ip.released_at, NULL),
+          approvalState: coalesce(ip.status, ip.approvalState, 'pending'),
+          notifiedAt: coalesce(ip.notifiedAt, ip.notified_at, NULL)
+        }
+      ],
+      testResults: [t IN tests |
+        {
+          testId: toString(id(t)),
+          number: t.number,
+          status: coalesce(t.status, 'pending'),
+          requestedAt: coalesce(t.requestedAt, t.createdAt, t.updatedAt)
+        }
+      ]
+    } AS lot
   `,
   updateLot: `
     MATCH (l:Lot {projectId: $projectId, number: $number})
@@ -999,9 +1468,23 @@ export const LOT_QUERIES = {
         l.updatedAt = datetime()
     RETURN l
   `,
+  updateLotById: `
+    MATCH (l:Lot {projectId: $projectId})
+    WHERE id(l) = toInteger($lotId) AND COALESCE(l.isDeleted, false) = false
+    SET l += $properties,
+        l.updatedAt = datetime()
+    RETURN l
+  `,
   updateLotStatus: `
     MATCH (l:Lot {projectId: $projectId, number: $number})
     WHERE COALESCE(l.isDeleted, false) = false
+    SET l.status = $status,
+        l.updatedAt = datetime()
+    RETURN l
+  `,
+  updateLotStatusById: `
+    MATCH (l:Lot {projectId: $projectId})
+    WHERE id(l) = toInteger($lotId) AND COALESCE(l.isDeleted, false) = false
     SET l.status = $status,
         l.updatedAt = datetime()
     RETURN l
@@ -1038,7 +1521,6 @@ export interface ManagementPlanNode {
   approvedBy?: string;
   approvedDate?: Date;
   summary?: string;
-  htmlContent?: string;
   notes?: string;
   requiredItps?: ManagementPlanRequiredItp[];
   createdAt: Date;
@@ -1074,7 +1556,6 @@ export const ManagementPlanSchema = z.object({
   approvedBy: z.string().optional(),
   approvedDate: z.coerce.date().optional(),
   summary: z.string().optional(),
-  htmlContent: z.string().optional(),
   notes: z.string().optional(),
   requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
@@ -1087,7 +1568,6 @@ export const CreateManagementPlanInputSchema = z.object({
   approvedBy: z.string().optional(),
   approvedDate: z.coerce.date().optional(),
   summary: z.string().optional(),
-  htmlContent: z.string().optional(),
   notes: z.string().optional(),
   requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
@@ -1101,7 +1581,6 @@ export const UpdateManagementPlanInputSchema = z.object({
   approvedBy: z.string().optional(),
   approvedDate: z.coerce.date().optional(),
   summary: z.string().optional(),
-  htmlContent: z.string().optional(),
   notes: z.string().optional(),
   requiredItps: z.array(ManagementPlanRequiredItpSchema).optional(),
 });
@@ -1140,7 +1619,6 @@ export const MANAGEMENT_PLAN_QUERIES = {
         ELSE datetime($properties.approvedDate)
       END,
       summary: $properties.summary,
-      htmlContent: $properties.htmlContent,
       requiredItps: coalesce($properties.requiredItps, []),
       notes: $properties.notes,
       createdAt: datetime(),
@@ -1599,7 +2077,6 @@ export interface ProjectNode {
   projectId: string;  // PRIMARY KEY - matches Neo4j implementation
   projectName: string;  // REQUIRED - Primary project name
   projectCode?: string;  // Internal project code
-  contractNumber?: string;  // Contract identifier
   projectDescription?: string;  // One-sentence overview
   scopeSummary?: string;  // Brief summary of work scope
   projectAddress?: string;  // Physical site address
@@ -1607,19 +2084,11 @@ export interface ProjectNode {
   jurisdiction?: JurisdictionValue;  // Governing jurisdiction
   agency?: string;  // Responsible road agency
   localCouncil?: string;  // Local authority/council name
-  contractValue?: string;  // Monetary value with currency
-  procurementMethod?: string;  // Contract type (D&C, EPC, lump sum, etc.)
-  regulatoryFramework?: string;  // Governing legislation
-  applicableStandards?: string[];  // Referenced standards and codes
-  parties?: string;  // JSON string with client, principal, parties_mentioned_in_docs
   keyDates?: {
     commencementDate?: string;
     practicalCompletionDate?: string;
     defectsLiabilityPeriod?: string;
   };
-  sourceDocuments?: string[];  // Document IDs used for extraction
-  htmlContent?: string;  // Complete HTML string (NOT a file path)
-  status?: 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1636,7 +2105,8 @@ export const ProjectMetadata: EntityMetadata = {
     outgoing: [],
     incoming: [
       { type: 'BELONGS_TO_PROJECT', source: 'ALL', description: 'All entities belong to project' },
-      { type: 'BELONGS_TO_PROJECT', source: 'Party', description: 'Parties belong to project' },
+      { type: 'BELONGS_TO_PROJECT', source: 'PartyContact', description: 'Contacts belong to project' },
+      { type: 'BELONGS_TO_PROJECT', source: 'ProjectIdentifier', description: 'Identifiers belong to project' },
     ],
   },
 };
@@ -1645,7 +2115,6 @@ export const ProjectSchema = z.object({
   projectId: z.string(),  // PRIMARY KEY
   projectName: z.string(),
   projectCode: z.string().optional(),
-  contractNumber: z.string().optional(),
   projectDescription: z.string().optional(),
   scopeSummary: z.string().optional(),
   projectAddress: z.string().optional(),
@@ -1653,19 +2122,11 @@ export const ProjectSchema = z.object({
   jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
   agency: z.string().optional(),
   localCouncil: z.string().optional(),
-  contractValue: z.string().optional(),
-  procurementMethod: z.string().optional(),
-  regulatoryFramework: z.string().optional(),
-  applicableStandards: z.array(z.string()).optional(),
-  parties: z.string().optional(),
   keyDates: z.object({
     commencementDate: z.string().optional(),
     practicalCompletionDate: z.string().optional(),
     defectsLiabilityPeriod: z.string().optional(),
   }).optional(),
-  sourceDocuments: z.array(z.string()).optional(),
-  htmlContent: z.string().optional(),
-  status: z.enum(['planning', 'active', 'on_hold', 'completed', 'archived']).optional(),
 });
 
 export const PROJECT_QUERIES = {
@@ -1683,7 +2144,6 @@ export const PROJECT_QUERIES = {
       projectId: $projectId,
       projectName: $projectName,
       projectCode: $projectCode,
-      contractNumber: $contractNumber,
       projectDescription: $projectDescription,
       scopeSummary: $scopeSummary,
       projectAddress: $projectAddress,
@@ -1691,19 +2151,130 @@ export const PROJECT_QUERIES = {
       jurisdiction: $jurisdiction,
       agency: $agency,
       localCouncil: $localCouncil,
-      contractValue: $contractValue,
-      procurementMethod: $procurementMethod,
-      regulatoryFramework: $regulatoryFramework,
-      applicableStandards: $applicableStandards,
-      parties: $parties,
       keyDates: $keyDates,
-      sourceDocuments: $sourceDocuments,
-      htmlContent: $htmlContent,
-      status: $status,
       createdAt: datetime(),
       updatedAt: datetime()
     })
     RETURN p
+  `,
+};
+
+// ----------------------------------------------------------------------------
+
+/**
+ * PROJECT IDENTIFIER
+ * Structured project, contract, and site codes
+ */
+export interface ProjectIdentifierNode {
+  projectId: string;
+  code: string;
+  codeType: string;
+  identifier: string;
+  issuingContactSlug?: string;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const ProjectIdentifierMetadata: EntityMetadata = {
+  createdBy: [],
+  displayedOn: [
+    '/projects/[projectId]/settings',
+    '/projects/[projectId]/registers/identifiers',
+  ],
+  relationships: {
+    outgoing: [
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Identifier belongs to project' },
+      { type: 'ISSUED_BY_CONTACT', target: 'PartyContact', description: 'Identifier issued by contact' },
+    ],
+    incoming: [],
+  },
+};
+
+export const ProjectIdentifierSchema = z.object({
+  projectId: z.string(),
+  code: z.string(),
+  codeType: z.string(),
+  identifier: z.string(),
+  issuingContactSlug: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const CreateProjectIdentifierInputSchema = z.object({
+  code: z.string(),
+  codeType: z.string(),
+  identifier: z.string(),
+  issuingContactSlug: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateProjectIdentifierInput = z.infer<typeof CreateProjectIdentifierInputSchema>;
+
+export const UpdateProjectIdentifierInputSchema = z.object({
+  codeType: z.string().optional(),
+  identifier: z.string().optional(),
+  issuingContactSlug: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type UpdateProjectIdentifierInput = z.infer<typeof UpdateProjectIdentifierInputSchema>;
+
+export const PROJECT_IDENTIFIER_QUERIES = {
+  getAllIdentifiers: `
+    MATCH (identifier:ProjectIdentifier {projectId: $projectId})
+    WHERE COALESCE(identifier.isDeleted, false) = false
+    RETURN identifier
+    ORDER BY identifier.code
+  `,
+  getIdentifierByCode: `
+    MATCH (identifier:ProjectIdentifier {projectId: $projectId, code: $code})
+    WHERE COALESCE(identifier.isDeleted, false) = false
+    RETURN identifier
+  `,
+  createIdentifier: `
+    MATCH (project:Project {projectId: $projectId})
+    OPTIONAL MATCH (contact:PartyContact {projectId: $projectId, slug: $properties.issuingContactSlug})
+    MERGE (identifier:ProjectIdentifier {projectId: $projectId, code: $properties.code})
+      ON CREATE SET identifier.createdAt = datetime(),
+                    identifier.isDeleted = false
+    SET identifier.codeType = $properties.codeType,
+        identifier.identifier = $properties.identifier,
+        identifier.issuingContactSlug = $properties.issuingContactSlug,
+        identifier.notes = $properties.notes,
+        identifier.isDeleted = false,
+        identifier.updatedAt = datetime()
+    MERGE (identifier)-[:BELONGS_TO_PROJECT]->(project)
+    OPTIONAL MATCH (identifier)-[oldRel:ISSUED_BY_CONTACT]->(:PartyContact)
+    DELETE oldRel
+    FOREACH (_ IN CASE WHEN contact IS NULL THEN [] ELSE [1] END |
+      MERGE (identifier)-[:ISSUED_BY_CONTACT]->(contact)
+    )
+    RETURN identifier
+  `,
+  updateIdentifier: `
+    MATCH (identifier:ProjectIdentifier {projectId: $projectId, code: $code})
+    WHERE COALESCE(identifier.isDeleted, false) = false
+    SET identifier += $properties,
+        identifier.issuingContactSlug = COALESCE($properties.issuingContactSlug, identifier.issuingContactSlug),
+        identifier.isDeleted = false,
+        identifier.updatedAt = datetime()
+    WITH identifier, COALESCE($properties.issuingContactSlug, identifier.issuingContactSlug) AS newContactSlug
+    OPTIONAL MATCH (identifier)-[oldRel:ISSUED_BY_CONTACT]->(:PartyContact)
+    DELETE oldRel
+    WITH identifier, newContactSlug
+    OPTIONAL MATCH (contact:PartyContact {projectId: $projectId, slug: newContactSlug})
+    FOREACH (_ IN CASE WHEN contact IS NULL THEN [] ELSE [1] END |
+      MERGE (identifier)-[:ISSUED_BY_CONTACT]->(contact)
+    )
+    RETURN identifier
+  `,
+  deleteIdentifier: `
+    MATCH (identifier:ProjectIdentifier {projectId: $projectId, code: $code})
+    WHERE COALESCE(identifier.isDeleted, false) = false
+    SET identifier.isDeleted = true,
+        identifier.updatedAt = datetime()
+    RETURN identifier
   `,
 };
 
@@ -2427,9 +2998,7 @@ export interface SupplierNode {
 }
 
 export const SupplierMetadata: EntityMetadata = {
-  createdBy: [
-    { agent: 'project-details', prompt: '@prompts/project-details.md' },
-  ],
+  createdBy: [],
   displayedOn: [
     '/projects/[projectId]/settings',
     '/projects/[projectId]/materials',
@@ -3113,7 +3682,7 @@ export interface WorkTypeNode {
 
 export const WorkTypeMetadata: EntityMetadata = {
   createdBy: [
-    { agent: 'project-details', prompt: '@prompts/project-details.md' },
+    // Work types are generated by downstream plan agents (not project-details)
     { agent: 'pqp-generation', prompt: '@prompts/pqp-generation.md' },
   ],
   displayedOn: [
@@ -3200,131 +3769,296 @@ export const WORK_TYPE_QUERIES = {
 // ----------------------------------------------------------------------------
 
 /**
- * PARTY
- * Key project parties and contacts
+ * PARTY CONTACT
+ * Individual contacts listed in project directories
  */
-export interface PartyNode {
-  projectId: string;  // Foreign key to Project
-  code: string;
+export const PARTY_CONTACT_CATEGORIES = [
+  'Client',
+  'Principal Contractor',
+  'Consultants/Engineers',
+  'Subcontractors',
+  'Authorities/Others',
+] as const;
+
+export type PartyContactCategory = typeof PARTY_CONTACT_CATEGORIES[number];
+
+export interface PartyContactNode {
+  projectId: string;
+  slug: string;
   name: string;
-  role: string;
-  organization: string;
-  contactPerson?: string;
+  roleTitle?: string;
+  organization?: string;
+  category?: PartyContactCategory;
   email?: string;
   phone?: string;
+  mobile?: string;
   address?: string;
-  abn?: string;
-  additionalDetails?: Record<string, any>;
+  notes?: string;
+  listCodes?: string[];
   createdAt: Date;
   updatedAt: Date;
   id?: string;
 }
 
-export const PartyMetadata: EntityMetadata = {
+export const PartyContactMetadata: EntityMetadata = {
   createdBy: [
     { agent: 'project-details', prompt: '@prompts/project-details.md' },
   ],
   displayedOn: [
-    '/projects/[projectId]/settings',
     '/projects/[projectId]/team',
+    '/projects/[projectId]/settings',
   ],
   relationships: {
     outgoing: [
-      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Party belongs to project' },
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Contact belongs to project' },
+      { type: 'LISTED_IN', target: 'ContactList', description: 'Contact listed in directory' },
     ],
-    incoming: [],
+    incoming: [
+      { type: 'HAS_CONTACT', source: 'ContactList', description: 'Contact lists reference this contact' },
+    ],
   },
 };
 
-export const PartySchema = z.object({
+export const PartyContactSchema = z.object({
+  projectId: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  roleTitle: z.string().optional(),
+  organization: z.string().optional(),
+  category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  mobile: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+  listCodes: z.array(z.string()).optional(),
+});
+
+export const CreatePartyContactInputSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  roleTitle: z.string().optional(),
+  organization: z.string().optional(),
+  category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  mobile: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+  listCodes: z.array(z.string()).default([]),
+});
+
+export type CreatePartyContactInput = z.infer<typeof CreatePartyContactInputSchema>;
+
+export const UpdatePartyContactInputSchema = z.object({
+  name: z.string().optional(),
+  roleTitle: z.string().optional(),
+  organization: z.string().optional(),
+  category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  mobile: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+  listCodes: z.array(z.string()).optional(),
+});
+
+export type UpdatePartyContactInput = z.infer<typeof UpdatePartyContactInputSchema>;
+
+export const PARTY_CONTACT_QUERIES = {
+  getAllContacts: `
+    MATCH (contact:PartyContact {projectId: $projectId})
+    WHERE COALESCE(contact.isDeleted, false) = false
+    RETURN contact
+    ORDER BY contact.slug
+  `,
+  getContactBySlug: `
+    MATCH (contact:PartyContact {projectId: $projectId, slug: $slug})
+    WHERE COALESCE(contact.isDeleted, false) = false
+    RETURN contact
+  `,
+  createContact: `
+    MATCH (project:Project {projectId: $projectId})
+    MERGE (contact:PartyContact {projectId: $projectId, slug: $properties.slug})
+      ON CREATE SET contact.createdAt = datetime(),
+                    contact.isDeleted = false
+    OPTIONAL MATCH (contact)-[:LISTED_IN]->(existingList:ContactList)
+    WITH project, contact, collect(DISTINCT existingList.code) AS existingListCodes
+    WITH project, contact,
+         CASE
+           WHEN $properties.listCodes IS NULL THEN existingListCodes
+           ELSE $properties.listCodes
+         END AS desiredListCodes
+    SET contact.name = $properties.name,
+        contact.roleTitle = $properties.roleTitle,
+        contact.organization = $properties.organization,
+        contact.category = $properties.category,
+        contact.email = $properties.email,
+        contact.phone = $properties.phone,
+        contact.mobile = $properties.mobile,
+        contact.address = $properties.address,
+        contact.notes = $properties.notes,
+        contact.listCodes = COALESCE(desiredListCodes, []),
+        contact.isDeleted = false,
+        contact.updatedAt = datetime()
+    MERGE (contact)-[:BELONGS_TO_PROJECT]->(project)
+    OPTIONAL MATCH (contact)-[oldList:LISTED_IN]->(:ContactList)
+    DELETE oldList
+    OPTIONAL MATCH (:ContactList)-[oldHas:HAS_CONTACT]->(contact)
+    DELETE oldHas
+    WITH contact, desiredListCodes
+    FOREACH (listCode IN COALESCE(desiredListCodes, []) |
+      MATCH (list:ContactList {projectId: $projectId, code: listCode})
+      MERGE (contact)-[:LISTED_IN]->(list)
+      MERGE (list)-[:HAS_CONTACT]->(contact)
+    )
+    RETURN contact
+  `,
+  updateContact: `
+    MATCH (contact:PartyContact {projectId: $projectId, slug: $slug})
+    WHERE COALESCE(contact.isDeleted, false) = false
+    OPTIONAL MATCH (contact)-[:LISTED_IN]->(existingList:ContactList)
+    WITH contact, collect(DISTINCT existingList.code) AS existingListCodes
+    SET contact += $properties,
+        contact.listCodes = COALESCE($properties.listCodes, contact.listCodes, existingListCodes),
+        contact.isDeleted = false,
+        contact.updatedAt = datetime()
+    WITH contact,
+         CASE
+           WHEN $properties.listCodes IS NULL THEN COALESCE(contact.listCodes, existingListCodes)
+           ELSE $properties.listCodes
+         END AS desiredListCodes
+    OPTIONAL MATCH (contact)-[oldList:LISTED_IN]->(:ContactList)
+    DELETE oldList
+    OPTIONAL MATCH (:ContactList)-[oldHas:HAS_CONTACT]->(contact)
+    DELETE oldHas
+    WITH contact, desiredListCodes
+    FOREACH (listCode IN COALESCE(desiredListCodes, []) |
+      MATCH (list:ContactList {projectId: $projectId, code: listCode})
+      MERGE (contact)-[:LISTED_IN]->(list)
+      MERGE (list)-[:HAS_CONTACT]->(contact)
+    )
+    RETURN contact
+  `,
+  deleteContact: `
+    MATCH (contact:PartyContact {projectId: $projectId, slug: $slug})
+    WHERE COALESCE(contact.isDeleted, false) = false
+    SET contact.isDeleted = true,
+        contact.updatedAt = datetime()
+    RETURN contact
+  `,
+};
+
+// ----------------------------------------------------------------------------
+
+/**
+ * CONTACT LIST
+ * Central directory of project parties and contacts
+ */
+export interface ContactListNode {
+  projectId: string;  // Foreign key to Project
+  code: string;
+  name: string;
+  description?: string;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const ContactListMetadata: EntityMetadata = {
+  createdBy: [
+    { agent: 'project-details', prompt: '@prompts/project-details.md' },
+  ],
+  displayedOn: [
+    '/projects/[projectId]/team',
+    '/projects/[projectId]/settings',
+  ],
+  relationships: {
+    outgoing: [
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Contact list belongs to project' },
+      { type: 'HAS_CONTACT', target: 'PartyContact', description: 'Contact list groups project contacts' },
+    ],
+    incoming: [
+      { type: 'LISTED_IN', source: 'PartyContact', description: 'Contacts are listed in this contact list' },
+    ],
+  },
+};
+
+export const ContactListSchema = z.object({
   projectId: z.string(),
   code: z.string(),
   name: z.string(),
-  role: z.string(),
-  organization: z.string(),
-  contactPerson: z.string().optional(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  abn: z.string().optional(),
-  additionalDetails: z.record(z.any()).optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
 });
 
-export const CreatePartyInputSchema = z.object({
+export const CreateContactListInputSchema = z.object({
   code: z.string(),
   name: z.string(),
-  role: z.string(),
-  organization: z.string(),
-  contactPerson: z.string().optional(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  abn: z.string().optional(),
-  additionalDetails: z.record(z.any()).optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
 });
 
-export type CreatePartyInput = z.infer<typeof CreatePartyInputSchema>;
+export type CreateContactListInput = z.infer<typeof CreateContactListInputSchema>;
 
-export const UpdatePartyInputSchema = z.object({
+export const UpdateContactListInputSchema = z.object({
   name: z.string().optional(),
-  role: z.string().optional(),
-  organization: z.string().optional(),
-  contactPerson: z.string().optional(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  abn: z.string().optional(),
-  additionalDetails: z.record(z.any()).optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
 });
 
-export type UpdatePartyInput = z.infer<typeof UpdatePartyInputSchema>;
+export type UpdateContactListInput = z.infer<typeof UpdateContactListInputSchema>;
 
-export const PARTY_QUERIES = {
-  getAllParties: `
-    MATCH (party:Party {projectId: $projectId})
-    WHERE COALESCE(party.isDeleted, false) = false
-    RETURN party
-    ORDER BY party.name
+export const CONTACT_LIST_QUERIES = {
+  getAllContactLists: `
+    MATCH (cl:ContactList {projectId: $projectId})
+    WHERE COALESCE(cl.isDeleted, false) = false
+    RETURN cl
+    ORDER BY cl.name
   `,
-  getPartyByCode: `
-    MATCH (party:Party {projectId: $projectId, code: $code})
-    WHERE COALESCE(party.isDeleted, false) = false
-    RETURN party
+  getContactListByCode: `
+    MATCH (cl:ContactList {projectId: $projectId, code: $code})
+    WHERE COALESCE(cl.isDeleted, false) = false
+    RETURN cl
   `,
-  createParty: `
+  createContactList: `
     MATCH (p:Project {projectId: $projectId})
-    CREATE (party:Party {
+    MERGE (cl:ContactList {
       projectId: $projectId,
-      code: $properties.code,
-      name: $properties.name,
-      role: $properties.role,
-      organization: $properties.organization,
-      contactPerson: $properties.contactPerson,
-      email: $properties.email,
-      phone: $properties.phone,
-      address: $properties.address,
-      abn: $properties.abn,
-      additionalDetails: COALESCE($properties.additionalDetails, {}),
-      createdAt: datetime(),
-      updatedAt: datetime(),
-      isDeleted: false
+      code: $properties.code
     })
-    MERGE (party)-[:BELONGS_TO_PROJECT]->(p)
-    RETURN party
+    ON CREATE SET
+      cl.name = $properties.name,
+      cl.description = $properties.description,
+      cl.notes = $properties.notes,
+      cl.createdAt = datetime(),
+      cl.updatedAt = datetime(),
+      cl.isDeleted = false
+    ON MATCH SET
+      cl.name = $properties.name,
+      cl.description = $properties.description,
+      cl.notes = $properties.notes,
+      cl.updatedAt = datetime(),
+      cl.isDeleted = false
+    MERGE (cl)-[:BELONGS_TO_PROJECT]->(p)
+    RETURN cl
   `,
-  updateParty: `
-    MATCH (party:Party {projectId: $projectId, code: $code})
-    WHERE COALESCE(party.isDeleted, false) = false
-    SET party += $properties,
-        party.updatedAt = datetime()
-    RETURN party
+  updateContactList: `
+    MATCH (cl:ContactList {projectId: $projectId, code: $code})
+    WHERE COALESCE(cl.isDeleted, false) = false
+    SET cl.name = COALESCE($properties.name, cl.name),
+        cl.description = COALESCE($properties.description, cl.description),
+        cl.notes = COALESCE($properties.notes, cl.notes),
+        cl.updatedAt = datetime()
+    RETURN cl
   `,
-  deleteParty: `
-    MATCH (party:Party {projectId: $projectId, code: $code})
-    WHERE COALESCE(party.isDeleted, false) = false
-    SET party.isDeleted = true,
-        party.updatedAt = datetime()
-    RETURN party
+  deleteContactList: `
+    MATCH (cl:ContactList {projectId: $projectId, code: $code})
+    WHERE COALESCE(cl.isDeleted, false) = false
+    SET cl.isDeleted = true,
+        cl.updatedAt = datetime()
+    RETURN cl
   `,
 };
 
@@ -3335,13 +4069,16 @@ export const PARTY_QUERIES = {
 export interface MasterProjectOutput {
   project?: ProjectNode;
   documents?: DocumentNode[];
+  documentSections?: DocumentSectionNode[];
   standards?: StandardNode[];
   workTypes?: WorkTypeNode[];
   areaCodes?: AreaCodeNode[];
   suppliers?: SupplierNode[];
   laboratories?: LaboratoryNode[];
   users?: UserNode[];
-  parties?: PartyNode[];
+  contactLists?: ContactListNode[];
+  partyContacts?: PartyContactNode[];
+  projectIdentifiers?: ProjectIdentifierNode[];
   itpTemplates?: Array<{
     template: ITPTemplateNode;
     inspectionPoints: InspectionPointNode[];
@@ -3395,7 +4132,9 @@ export interface MasterProjectOutput {
 
 export const ALL_ENTITIES = [
   'AreaCode',
+  'ContactList',
   'Document',
+  'DocumentSection',
   'InspectionPoint',
   'ITPInstance',
   'ITPTemplate',
@@ -3406,10 +4145,11 @@ export const ALL_ENTITIES = [
   'Material',
   'MixDesign',
   'NCR',
-  'Party',
+  'PartyContact',
   'Photo',
   'ProgressClaim',
   'Project',
+  'ProjectIdentifier',
   'Quantity',
   'Sample',
   'ScheduleItem',
@@ -3428,7 +4168,9 @@ export type EntityType = typeof ALL_ENTITIES[number];
 export function getEntityMetadata(entityType: EntityType): EntityMetadata {
   const metadataMap: Record<EntityType, EntityMetadata> = {
     AreaCode: AreaCodeMetadata,
+    ContactList: ContactListMetadata,
     Document: DocumentMetadata,
+    DocumentSection: DocumentSectionMetadata,
     InspectionPoint: InspectionPointMetadata,
     ITPInstance: ITPInstanceMetadata,
     ITPTemplate: ITPTemplateMetadata,
@@ -3439,10 +4181,11 @@ export function getEntityMetadata(entityType: EntityType): EntityMetadata {
     Material: MaterialMetadata,
     MixDesign: MixDesignMetadata,
     NCR: NCRMetadata,
-    Party: PartyMetadata,
+    PartyContact: PartyContactMetadata,
     Photo: PhotoMetadata,
     ProgressClaim: ProgressClaimMetadata,
     Project: ProjectMetadata,
+    ProjectIdentifier: ProjectIdentifierMetadata,
     Quantity: QuantityMetadata,
     Sample: SampleMetadata,
     ScheduleItem: ScheduleItemMetadata,
@@ -3462,7 +4205,9 @@ export function getEntityMetadata(entityType: EntityType): EntityMetadata {
 export function getEntitySchema(entityType: EntityType): z.ZodSchema {
   const schemaMap: Record<EntityType, z.ZodSchema> = {
     AreaCode: AreaCodeSchema,
+    ContactList: ContactListSchema,
     Document: DocumentSchema,
+    DocumentSection: DocumentSectionSchema,
     InspectionPoint: InspectionPointSchema,
     ITPInstance: ITPInstanceSchema,
     ITPTemplate: ITPTemplateSchema,
@@ -3473,10 +4218,11 @@ export function getEntitySchema(entityType: EntityType): z.ZodSchema {
     Material: MaterialSchema,
     MixDesign: MixDesignSchema,
     NCR: NCRSchema,
-    Party: PartySchema,
+    PartyContact: PartyContactSchema,
     Photo: PhotoSchema,
     ProgressClaim: ProgressClaimSchema,
     Project: ProjectSchema,
+    ProjectIdentifier: ProjectIdentifierSchema,
     Quantity: QuantitySchema,
     Sample: SampleSchema,
     ScheduleItem: ScheduleItemSchema,

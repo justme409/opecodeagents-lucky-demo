@@ -44,6 +44,7 @@ export const SCHEMA_CATEGORIES = {
   ],
   DOCUMENTS: [
     'document',
+    'document-section',
     'photo',
     'management-plan',
   ],

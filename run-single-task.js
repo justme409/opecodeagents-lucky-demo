@@ -360,7 +360,7 @@ ${colors.cyan}Tips:${colors.reset}
 ${colors.cyan}Requirements:${colors.reset}
   - OpenCode server running on port 4096
   - Neo4j databases accessible (ports 7687, 7688, 7690)
-  - Valid credentials in shared/connection details.md
+  - Valid credentials in connection details.md
 `);
     process.exit(1);
   }
