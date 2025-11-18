@@ -15,9 +15,9 @@ Research the project documents to gather each data point below, then persist the
 - `jurisdiction` — Canonical jurisdiction string (use approved list). Source: same as `stateTerritory`, compliance statements.
 - `agency` — Road authority for the jurisdiction. Source: client/authority listings, tender briefs.
 - `localCouncil` — Local government area. Source: planning references, environmental statements.
-- `keyDates.commencementDate` — Project start date. Source: programme summaries, milestone tables, contract clauses.
-- `keyDates.practicalCompletionDate` — Target completion date. Source: same as commencement.
-- `keyDates.defectsLiabilityPeriod` — Duration of defects period. Source: contract conditions, warranty sections, schedules.
+- `commencementDate` — Project start date. Source: programme summaries, milestone tables, contract clauses.
+- `practicalCompletionDate` — Target completion date. Source: same as commencement.
+- `defectsLiabilityPeriod` — Duration of defects period. Source: contract conditions, warranty sections, schedules.
 **Relationships:**
 - `(:SupportNode)-[:BELONGS_TO_PROJECT]->(:Project {projectId})` for every supporting entity you create.
 

@@ -16,8 +16,8 @@ const path = require('path');
 const CONFIG = {
   SERVER_URL: 'http://127.0.0.1:4096',
   MODEL: {
-    providerID: 'opencode',
-    modelID: 'grok-code'
+    providerID: 'openrouter',
+    modelID: 'openrouter/sherlock-think-alpha'
   }
 };
 

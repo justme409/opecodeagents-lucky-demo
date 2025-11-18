@@ -2,11 +2,12 @@
 
 ## Overview
 
-Three Neo4j databases are available:
+Four Neo4j databases are available:
 
 1. **Standards** - Reference specifications (READ ONLY)
 2. **Project Docs** - Project documents (READ ONLY)
-3. **Generated** - Your output destination (READ & WRITE)
+3. **IMS/QSE System** - Corporate management system (READ ONLY)
+4. **Generated** - Your output destination (READ & WRITE)
 
 ---
 
@@ -64,7 +65,70 @@ cypher-shell -a neo4j://localhost:7688 -u neo4j -p 27184236e197d5f4c36c60f453eba
 
 ---
 
-## Database 3: Generated
+## Database 3: IMS/QSE System
+
+**Purpose:** Corporate Integrated Management System (Quality, Safety, Environmental)
+
+**Connection:**
+```
+URI:      neo4j://localhost:7689
+Username: neo4j
+Password: ims_qse_2024_secure
+Database: neo4j
+```
+
+**Access:** READ ONLY (for plan generation agents)
+
+**Contains:**
+- Corporate QSE procedures and policies
+- ISO 9001/14001/45001 compliant procedures
+- Form templates and work instructions
+- Registers (Risk, NCR, Compliance, Training, etc.)
+- Management system documentation
+- 49 QSE items across 20+ categories
+
+**Node Types:**
+- `:QSEItem` - Procedures, Policies, Registers, Templates, Forms, Plans
+
+**Key Properties:**
+- `id` - QSE item identifier (e.g., QSE-8.1-PROC-01)
+- `title` - Full title of the item
+- `type` - Procedure, Policy, Register, Template, Form, etc.
+- `category` - Functional category (Quality, Safety, Environmental, etc.)
+- `path` - URL path for linking (e.g., /ims/procedures/ncr-procedure)
+- `isoClause` - Related ISO clause (e.g., 4.1, 8.1, 10.2)
+- `html` - Full HTML content of the item
+- `keywords` - Searchable keywords
+- `status` - approved, draft, superseded
+
+**Relationships:**
+- `(:QSEItem)-[:REFERENCES]->(:QSEItem)` - Cross-references between items
+
+**Quick Test:**
+```bash
+cypher-shell -a neo4j://localhost:7689 -u neo4j -p ims_qse_2024_secure
+```
+
+**Example Queries:**
+```cypher
+// Find all procedures
+MATCH (item:QSEItem {type: 'Procedure'})
+RETURN item.id, item.title
+ORDER BY item.id
+
+// Find items related to quality
+MATCH (item:QSEItem)
+WHERE 'quality' IN item.keywords
+RETURN item.id, item.title, item.type
+
+// Find items by ISO clause
+MATCH (item:QSEItem {isoClause: '8.1'})
+RETURN item.id, item.title, item.type
+```
+
+---
+
+## Database 4: Generated
 
 **Purpose:** AI-generated output and results destination
 

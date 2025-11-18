@@ -184,9 +184,6 @@ export interface DocumentNode {
   type: 'specification' | 'drawing' | 'report' | 'procedure' | 'plan' | 'correspondence' | 'other';
   discipline?: 'civil' | 'structural' | 'electrical' | 'mechanical' | 'architectural' | 'other';
   status: 'draft' | 'in_review' | 'approved' | 'superseded' | 'archived';
-  issueDate?: Date;
-  fileUrl?: string;
-  fileName?: string;
   createdAt: Date;
   updatedAt: Date;
   id?: string;
@@ -222,9 +219,6 @@ export const DocumentSchema = z.object({
   type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']),
   discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']),
-  issueDate: z.coerce.date().optional(),
-  fileUrl: z.string().optional(),
-  fileName: z.string().optional(),
 });
 
 export const CreateDocumentInputSchema = z.object({
@@ -235,9 +229,6 @@ export const CreateDocumentInputSchema = z.object({
   type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']).default('other'),
   discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']).default('draft'),
-  issueDate: z.coerce.date().optional(),
-  fileUrl: z.string().optional(),
-  fileName: z.string().optional(),
 });
 
 export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
@@ -248,9 +239,6 @@ export const UpdateDocumentInputSchema = z.object({
   type: z.enum(['specification', 'drawing', 'report', 'procedure', 'plan', 'correspondence', 'other']).optional(),
   discipline: z.enum(['civil', 'structural', 'electrical', 'mechanical', 'architectural', 'other']).optional(),
   status: z.enum(['draft', 'in_review', 'approved', 'superseded', 'archived']).optional(),
-  issueDate: z.coerce.date().optional(),
-  fileUrl: z.string().optional(),
-  fileName: z.string().optional(),
 });
 
 export type UpdateDocumentInput = z.infer<typeof UpdateDocumentInputSchema>;
@@ -279,12 +267,6 @@ export const DOCUMENT_QUERIES = {
       type: COALESCE($properties.type, 'other'),
       discipline: $properties.discipline,
       status: COALESCE($properties.status, 'draft'),
-      issueDate: CASE
-        WHEN $properties.issueDate IS NULL THEN null
-        ELSE datetime($properties.issueDate)
-      END,
-      fileUrl: $properties.fileUrl,
-      fileName: $properties.fileName,
       createdAt: datetime(),
       updatedAt: datetime(),
       isDeleted: false
@@ -296,10 +278,6 @@ export const DOCUMENT_QUERIES = {
     MATCH (d:Document {projectId: $projectId, documentNumber: $documentNumber})
     WHERE COALESCE(d.isDeleted, false) = false
     SET d += $properties,
-        d.issueDate = CASE
-          WHEN $properties.issueDate IS NULL THEN d.issueDate
-          ELSE datetime($properties.issueDate)
-        END,
         d.updatedAt = datetime()
     RETURN d
   `,
@@ -478,6 +456,7 @@ export interface InspectionPointNode {
   responsibleParty?: string;
   createdAt: Date;
   updatedAt: Date;
+  id?: string;
 }
 
 export const InspectionPointMetadata: EntityMetadata = {
@@ -508,9 +487,17 @@ export const InspectionPointSchema = z.object({
   sequence: z.number(),
   description: z.string(),
   type: z.enum(['hold', 'witness', 'surveillance', 'record']),
+  status: z.enum(['pending', 'in_progress', 'completed', 'approved', 'rejected']).optional(),
+  section: z.enum(['preliminaries', 'materials', 'pre_construction', 'construction', 'geometrics', 'conformance']).optional(),
   requirement: z.string(),
+  acceptanceCriteria: z.string().optional(),
+  testMethod: z.string().optional(),
+  testFrequency: z.string().optional(),
+  standardsRef: z.array(z.string()).optional(),
   isHoldPoint: z.boolean(),
   isWitnessPoint: z.boolean(),
+  responsibleParty: z.string().optional(),
+  id: z.string().optional(),
 });
 
 export const INSPECTION_POINT_QUERIES = {
@@ -2079,16 +2066,23 @@ export interface ProjectNode {
   projectCode?: string;  // Internal project code
   projectDescription?: string;  // One-sentence overview
   scopeSummary?: string;  // Brief summary of work scope
+  status?: string;
   projectAddress?: string;  // Physical site address
   stateTerritory?: string;  // Australian state/territory
   jurisdiction?: JurisdictionValue;  // Governing jurisdiction
+  jurisdictionCode?: string;
   agency?: string;  // Responsible road agency
   localCouncil?: string;  // Local authority/council name
-  keyDates?: {
-    commencementDate?: string;
-    practicalCompletionDate?: string;
-    defectsLiabilityPeriod?: string;
-  };
+  contractNumber?: string | number;
+  procurementMethod?: string;
+  contractValue?: number | string;
+  commencementDate?: string;  // FLAT: Key date - project commencement
+  practicalCompletionDate?: string;  // FLAT: Key date - practical completion
+  defectsLiabilityPeriod?: string;  // FLAT: Key date - defects liability period
+  regulatoryFramework?: string;
+  applicableStandards?: string[];
+  sourceDocuments?: string[] | string;
+  parties?: string | Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -2117,16 +2111,23 @@ export const ProjectSchema = z.object({
   projectCode: z.string().optional(),
   projectDescription: z.string().optional(),
   scopeSummary: z.string().optional(),
+  status: z.string().optional(),
   projectAddress: z.string().optional(),
   stateTerritory: z.string().optional(),
   jurisdiction: z.enum(JURISDICTION_VALUES).optional(),
+  jurisdictionCode: z.string().optional(),
   agency: z.string().optional(),
   localCouncil: z.string().optional(),
-  keyDates: z.object({
+  contractNumber: z.union([z.string(), z.number()]).optional(),
+  procurementMethod: z.string().optional(),
+  contractValue: z.union([z.number(), z.string()]).optional(),
     commencementDate: z.string().optional(),
     practicalCompletionDate: z.string().optional(),
     defectsLiabilityPeriod: z.string().optional(),
-  }).optional(),
+  regulatoryFramework: z.string().optional(),
+  applicableStandards: z.array(z.string()).optional(),
+  sourceDocuments: z.union([z.string(), z.array(z.string())]).optional(),
+  parties: z.union([z.string(), z.record(z.any())]).optional(),
 });
 
 export const PROJECT_QUERIES = {
@@ -2146,12 +2147,23 @@ export const PROJECT_QUERIES = {
       projectCode: $projectCode,
       projectDescription: $projectDescription,
       scopeSummary: $scopeSummary,
+      status: $status,
       projectAddress: $projectAddress,
       stateTerritory: $stateTerritory,
       jurisdiction: $jurisdiction,
+      jurisdictionCode: $jurisdictionCode,
       agency: $agency,
       localCouncil: $localCouncil,
-      keyDates: $keyDates,
+      contractNumber: $contractNumber,
+      procurementMethod: $procurementMethod,
+      contractValue: $contractValue,
+      commencementDate: $commencementDate,
+      practicalCompletionDate: $practicalCompletionDate,
+      defectsLiabilityPeriod: $defectsLiabilityPeriod,
+      regulatoryFramework: $regulatoryFramework,
+      applicableStandards: $applicableStandards,
+      sourceDocuments: $sourceDocuments,
+      parties: $parties,
       createdAt: datetime(),
       updatedAt: datetime()
     })
@@ -2171,6 +2183,7 @@ export interface ProjectIdentifierNode {
   codeType: string;
   identifier: string;
   issuingContactSlug?: string;
+  issuingPartyCode?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -2198,6 +2211,7 @@ export const ProjectIdentifierSchema = z.object({
   codeType: z.string(),
   identifier: z.string(),
   issuingContactSlug: z.string().optional(),
+  issuingPartyCode: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -2206,6 +2220,7 @@ export const CreateProjectIdentifierInputSchema = z.object({
   codeType: z.string(),
   identifier: z.string(),
   issuingContactSlug: z.string().optional(),
+  issuingPartyCode: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -2215,6 +2230,7 @@ export const UpdateProjectIdentifierInputSchema = z.object({
   codeType: z.string().optional(),
   identifier: z.string().optional(),
   issuingContactSlug: z.string().optional(),
+  issuingPartyCode: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -2241,6 +2257,7 @@ export const PROJECT_IDENTIFIER_QUERIES = {
     SET identifier.codeType = $properties.codeType,
         identifier.identifier = $properties.identifier,
         identifier.issuingContactSlug = $properties.issuingContactSlug,
+        identifier.issuingPartyCode = $properties.issuingPartyCode,
         identifier.notes = $properties.notes,
         identifier.isDeleted = false,
         identifier.updatedAt = datetime()
@@ -2257,6 +2274,7 @@ export const PROJECT_IDENTIFIER_QUERIES = {
     WHERE COALESCE(identifier.isDeleted, false) = false
     SET identifier += $properties,
         identifier.issuingContactSlug = COALESCE($properties.issuingContactSlug, identifier.issuingContactSlug),
+        identifier.issuingPartyCode = COALESCE($properties.issuingPartyCode, identifier.issuingPartyCode),
         identifier.isDeleted = false,
         identifier.updatedAt = datetime()
     WITH identifier, COALESCE($properties.issuingContactSlug, identifier.issuingContactSlug) AS newContactSlug
@@ -3788,6 +3806,7 @@ export interface PartyContactNode {
   name: string;
   roleTitle?: string;
   organization?: string;
+  partyCode?: string;
   category?: PartyContactCategory;
   email?: string;
   phone?: string;
@@ -3825,6 +3844,7 @@ export const PartyContactSchema = z.object({
   name: z.string(),
   roleTitle: z.string().optional(),
   organization: z.string().optional(),
+  partyCode: z.string().optional(),
   category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
@@ -3839,6 +3859,7 @@ export const CreatePartyContactInputSchema = z.object({
   name: z.string(),
   roleTitle: z.string().optional(),
   organization: z.string().optional(),
+  partyCode: z.string().optional(),
   category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
@@ -3854,6 +3875,7 @@ export const UpdatePartyContactInputSchema = z.object({
   name: z.string().optional(),
   roleTitle: z.string().optional(),
   organization: z.string().optional(),
+  partyCode: z.string().optional(),
   category: z.enum(PARTY_CONTACT_CATEGORIES).optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
@@ -3892,6 +3914,7 @@ export const PARTY_CONTACT_QUERIES = {
     SET contact.name = $properties.name,
         contact.roleTitle = $properties.roleTitle,
         contact.organization = $properties.organization,
+        contact.partyCode = $properties.partyCode,
         contact.category = $properties.category,
         contact.email = $properties.email,
         contact.phone = $properties.phone,
@@ -4059,6 +4082,117 @@ export const CONTACT_LIST_QUERIES = {
     SET cl.isDeleted = true,
         cl.updatedAt = datetime()
     RETURN cl
+  `,
+};
+
+// ----------------------------------------------------------------------------
+
+/**
+ * PARTY
+ * Organisations associated with a project (clients, principals, subcontractors, etc.)
+ */
+export interface PartyNode {
+  projectId: string;
+  code: string;
+  name: string;
+  role?: string;
+  organization?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  abn?: string;
+  description?: string;
+  additionalDetails?: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  id?: string;
+}
+
+export const PartyMetadata: EntityMetadata = {
+  createdBy: [
+    { agent: 'project-details', prompt: '@prompts/project-details.md' },
+  ],
+  displayedOn: [
+    '/projects/[projectId]/details',
+    '/projects/[projectId]/team',
+  ],
+  relationships: {
+    outgoing: [
+      { type: 'BELONGS_TO_PROJECT', target: 'Project', description: 'Party belongs to project' },
+    ],
+    incoming: [],
+  },
+};
+
+export const PartySchema = z.object({
+  projectId: z.string(),
+  code: z.string(),
+  name: z.string(),
+  role: z.string().optional(),
+  organization: z.string().optional(),
+  contactPerson: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  abn: z.string().optional(),
+  description: z.string().optional(),
+  additionalDetails: z.record(z.any()).optional(),
+});
+
+export const UpsertPartyInputSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  role: z.string().optional(),
+  organization: z.string().optional(),
+  contactPerson: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  abn: z.string().optional(),
+  description: z.string().optional(),
+  additionalDetails: z.record(z.any()).optional(),
+});
+
+export type UpsertPartyInput = z.infer<typeof UpsertPartyInputSchema>;
+
+export const PARTY_QUERIES = {
+  getAllParties: `
+    MATCH (party:Party {projectId: $projectId})
+    WHERE COALESCE(party.isDeleted, false) = false
+    RETURN party
+    ORDER BY toLower(COALESCE(party.role, '')), toLower(COALESCE(party.name, ''))
+  `,
+  getPartyByCode: `
+    MATCH (party:Party {projectId: $projectId, code: $code})
+    WHERE COALESCE(party.isDeleted, false) = false
+    RETURN party
+  `,
+  upsertParty: `
+    MATCH (project:Project {projectId: $projectId})
+    MERGE (party:Party {projectId: $projectId, code: $properties.code})
+      ON CREATE SET party.createdAt = datetime(),
+                    party.isDeleted = false
+    SET party.name = $properties.name,
+        party.role = $properties.role,
+        party.organization = $properties.organization,
+        party.contactPerson = $properties.contactPerson,
+        party.email = $properties.email,
+        party.phone = $properties.phone,
+        party.address = $properties.address,
+        party.abn = $properties.abn,
+        party.description = $properties.description,
+        party.additionalDetails = COALESCE($properties.additionalDetails, {}),
+        party.updatedAt = datetime()
+    MERGE (party)-[:BELONGS_TO_PROJECT]->(project)
+    RETURN party
+  `,
+  softDeleteParty: `
+    MATCH (party:Party {projectId: $projectId, code: $code})
+    WHERE COALESCE(party.isDeleted, false) = false
+    SET party.isDeleted = true,
+        party.updatedAt = datetime()
+    RETURN party
   `,
 };
 
